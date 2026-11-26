@@ -1,118 +1,112 @@
 import os
-import html
 import streamlit as st
 from dotenv import load_dotenv
 from garminconnect import Garmin
 
 load_dotenv()
 
-st.set_page_config(page_title="Garmin Run Log", page_icon="🏃‍♂️", layout="wide")
+st.set_page_config(
+    page_title="Garmin Run Dashboard",
+    page_icon="🏃",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-# ダークネイビー＆カードUI用のカスタムCSS
 st.markdown(
     """
     <style>
-    /* 全体の背景を深い紺〜ブラック基調に */
-    .stApp {
-        background: linear-gradient(160deg, #070b14 0%, #0d1629 50%, #080d1a 100%);
-        color: #f1f5f9;
-    }
-    /* サイドバーの背景 */
-    [data-testid="stSidebar"] {
-        background-color: #090e1a;
-        border-right: 1px solid #1e293b;
-    }
-    /* ヘッダーの余白や背景をなじませる */
-    header[data-testid="stHeader"] {
-        background: transparent;
-    }
-    /* ランカードのスタイル */
-    .run-card {
-        background: rgba(15, 23, 42, 0.85);
+      .stApp {
+        background-color: #0b1120;
+        color: #f8fafc;
+      }
+      .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 2.5rem;
+        max-width: 960px;
+      }
+      .run-card {
+        background: linear-gradient(145deg, #111827, #0f172a);
         border: 1px solid #1e293b;
         border-radius: 16px;
-        padding: 18px 20px;
+        padding: 18px;
         margin-bottom: 14px;
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-        transition: transform 0.15s ease, border-color 0.15s ease;
-    }
-    .run-card:hover {
-        transform: translateY(-2px);
-        border-color: #38bdf8;
-    }
-    .run-card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 14px;
-        padding-bottom: 10px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-    }
-    .run-date {
-        font-size: 0.92rem;
-        color: #94a3b8;
-        font-weight: 600;
-        letter-spacing: 0.03em;
-    }
-    .run-title {
-        font-size: 1.05rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+      .run-title {
+        font-size: 1.1rem;
         font-weight: 700;
         color: #f8fafc;
-    }
-    .metrics-grid {
+        margin-bottom: 4px;
+      }
+      .run-date {
+        font-size: 0.85rem;
+        color: #94a3b8;
+        margin-bottom: 12px;
+      }
+      .metric-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 12px;
-    }
-    @media (max-width: 768px) {
-        .metrics-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
-    .metric-box {
-        background: rgba(30, 41, 59, 0.55);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .metric-box {
+        background-color: rgba(30, 41, 59, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.14);
         border-radius: 12px;
         padding: 10px 12px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .metric-icon {
-        font-size: 1.45rem;
-        line-height: 1;
-    }
-    .metric-label {
-        font-size: 0.72rem;
+      }
+      .metric-label {
+        font-size: 0.75rem;
         color: #94a3b8;
         margin-bottom: 2px;
-    }
-    .metric-value {
-        font-size: 1.02rem;
+      }
+      .metric-value {
+        font-size: 1.05rem;
         font-weight: 700;
-        color: #f8fafc;
-    }
-    .accent-pace { color: #38bdf8; }
-    .accent-hr { color: #fb7185; }
-    .accent-shoe { color: #a78bfa; }
+        color: #38bdf8;
+      }
+      .gear-badge {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background-color: rgba(56, 189, 248, 0.14);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        color: #7dd3fc;
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+      @media (max-width: 640px) {
+        .block-container {
+          padding-top: 1rem !important;
+          padding-left: 0.75rem !important;
+          padding-right: 0.75rem !important;
+        }
+        .run-card {
+          padding: 14px !important;
+          border-radius: 14px !important;
+        }
+        .run-title {
+          font-size: 1rem !important;
+        }
+        .metric-value {
+          font-size: 0.98rem !important;
+        }
+      }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.markdown("## 🏃‍♂️ Garmin Run Dashboard")
-st.caption("直近のランニング記録をカードビューで表示します")
-
-with st.sidebar:
-    st.header("⚙️ 設定")
-    email = st.text_input("Garmin メールアドレス", value=os.getenv("GARMIN_EMAIL", ""))
-    password = st.text_input("Garmin パスワード", type="password", value=os.getenv("GARMIN_PASSWORD", ""))
-    limit = st.slider("取得件数", min_value=5, max_value=50, value=15, step=5)
+if "runs_data" not in st.session_state:
+    st.session_state["runs_data"] = []
+if "login_expanded" not in st.session_state:
+    st.session_state["login_expanded"] = True
 
 
-def format_pace(speed_mps):
-    if not speed_mps or speed_mps <= 0:
+def format_pace(avg_speed_mps):
+    if not avg_speed_mps or avg_speed_mps <= 0:
         return "-"
-    sec_per_km = 1000.0 / speed_mps
+    sec_per_km = 1000.0 / avg_speed_mps
     mins = int(sec_per_km // 60)
     secs = int(round(sec_per_km % 60))
     if secs == 60:
@@ -121,110 +115,123 @@ def format_pace(speed_mps):
     return f"{mins}'{secs:02d}\"/km"
 
 
-def get_shoes(client, activity_id):
-    try:
-        gear_list = client.get_activity_gear(activity_id)
-        if not gear_list:
-            return "未設定"
-        names = []
-        for g in gear_list:
-            nickname = (
-                g.get("displayName")
-                or g.get("customMakeModel")
-                or g.get("gearNickname")
-                or g.get("gearModelName")
-                or g.get("modelName")
-            )
-            if nickname:
-                names.append(str(nickname).strip())
-        return ", ".join(names) if names else "未設定"
-    except Exception:
-        return "未設定"
+def format_duration(seconds):
+    if not seconds:
+        return "-"
+    total_sec = int(seconds)
+    hrs = total_sec // 3600
+    mins = (total_sec % 3600) // 60
+    secs = total_sec % 60
+    if hrs > 0:
+        return f"{hrs}:{mins:02d}:{secs:02d}"
+    return f"{mins}:{secs:02d}"
 
 
-def get_garmin_client(user_email, user_password):
-    client = Garmin(user_email, user_password)
+def fetch_running_activities(email_val, password_val, limit_val):
+    client = Garmin(email_val, password_val)
     client.login()
-    return client
+
+    activities = client.get_activities(0, limit_val * 2)
+    run_items = []
+
+    for act in activities:
+        act_type = (act.get("activityType") or {}).get("typeKey", "")
+        if "running" not in act_type and "run" not in act_type:
+            continue
+
+        activity_id = act.get("activityId")
+        gear_name = "未登録"
+        if activity_id:
+            try:
+                gear_list = client.get_activity_gear(activity_id)
+                if gear_list:
+                    names = [
+                        g.get("customMakeModel") or g.get("gearModelName") or g.get("displayName")
+                        for g in gear_list
+                        if g.get("customMakeModel") or g.get("gearModelName") or g.get("displayName")
+                    ]
+                    if names:
+                        gear_name = " / ".join(names)
+            except Exception:
+                pass
+
+        distance_km = (act.get("distance") or 0) / 1000.0
+        run_items.append(
+            {
+                "name": act.get("activityName") or "ランニング",
+                "date": act.get("startTimeLocal") or "-",
+                "distance_km": distance_km,
+                "pace": format_pace(act.get("averageSpeed")),
+                "duration": format_duration(act.get("duration")),
+                "avg_hr": act.get("averageHR") or "-",
+                "gear": gear_name,
+            }
+        )
+        if len(run_items) >= limit_val:
+            break
+
+    return run_items
 
 
-if st.button("🔄 データを取得", type="primary"):
+st.title("🏃 Garmin Run Dashboard")
+
+with st.expander("🔐 Garminログイン・データ取得", expanded=st.session_state["login_expanded"]):
+    email = st.text_input(
+        "Garmin メールアドレス",
+        value=os.getenv("GARMIN_EMAIL", ""),
+        placeholder="example@email.com",
+    )
+    password = st.text_input(
+        "Garmin パスワード",
+        value=os.getenv("GARMIN_PASSWORD", ""),
+        type="password",
+        placeholder="パスワードを入力",
+    )
+    limit = st.slider("取得するラン件数", min_value=3, max_value=30, value=10, step=1)
+    fetch_clicked = st.button("🔄 データを取得", use_container_width=True)
+
+if fetch_clicked:
     if not email or not password:
-        st.warning("サイドバーでメールアドレスとパスワードを設定してください。")
-        st.stop()
+        st.warning("メールアドレスとパスワードの両方を入力してください。")
+    else:
+        with st.spinner("Garmin Connect からランデータを取得中..."):
+            try:
+                runs = fetch_running_activities(email.strip(), password, int(limit))
+                st.session_state["runs_data"] = runs
+                st.session_state["login_expanded"] = False
+                st.rerun()
+            except Exception as e:
+                st.error(f"データ取得に失敗しました: {e}")
 
-    with st.spinner("Garmin Connect からデータを取得中..."):
-        try:
-            client = get_garmin_client(email, password)
-            activities = client.get_activities(0, limit)
+runs_data = st.session_state.get("runs_data", [])
 
-            runs = []
-            for act in activities:
-                act_type = (act.get("activityType") or {}).get("typeKey", "")
-                if "running" not in act_type:
-                    continue
-
-                dist_km = (act.get("distance") or 0) / 1000.0
-                avg_speed = act.get("averageSpeed")
-                avg_hr = act.get("averageHR")
-                act_id = act.get("activityId")
-                act_name = act.get("activityName") or "ランニング"
-                start_local = (act.get("startTimeLocal") or "")[:16]
-
-                shoes = get_shoes(client, act_id) if act_id else "未設定"
-
-                runs.append({
-                    "date": start_local,
-                    "title": act_name,
-                    "distance": f"{dist_km:.2f} km",
-                    "pace": format_pace(avg_speed),
-                    "hr": f"{int(avg_hr)} bpm" if avg_hr else "-",
-                    "shoes": shoes,
-                })
-
-            if not runs:
-                st.info("指定件数の中にランアクティビティが見つかりませんでした。")
-            else:
-                for r in runs:
-                    card_html = f"""
-                    <div class="run-card">
-                        <div class="run-card-header">
-                            <span class="run-title">🏃 {html.escape(r['title'])}</span>
-                            <span class="run-date">📅 {html.escape(r['date'])}</span>
-                        </div>
-                        <div class="metrics-grid">
-                            <div class="metric-box">
-                                <div class="metric-icon">📏</div>
-                                <div>
-                                    <div class="metric-label">距離</div>
-                                    <div class="metric-value">{html.escape(r['distance'])}</div>
-                                </div>
-                            </div>
-                            <div class="metric-box">
-                                <div class="metric-icon">⚡</div>
-                                <div>
-                                    <div class="metric-label">平均ペース</div>
-                                    <div class="metric-value accent-pace">{html.escape(r['pace'])}</div>
-                                </div>
-                            </div>
-                            <div class="metric-box">
-                                <div class="metric-icon">❤️</div>
-                                <div>
-                                    <div class="metric-label">平均心拍</div>
-                                    <div class="metric-value accent-hr">{html.escape(r['hr'])}</div>
-                                </div>
-                            </div>
-                            <div class="metric-box">
-                                <div class="metric-icon">👟</div>
-                                <div>
-                                    <div class="metric-label">使用シューズ</div>
-                                    <div class="metric-value accent-shoe">{html.escape(r['shoes'])}</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    """
-                    st.markdown(card_html, unsafe_allow_html=True)
-
-        except Exception as e:
-            st.error(f"取得エラー: {e}")
+if runs_data:
+    for run in runs_data:
+        card_html = f"""
+        <div class="run-card">
+          <div class="run-title">{run["name"]}</div>
+          <div class="run-date">📅 {run["date"]}</div>
+          <div class="metric-grid">
+            <div class="metric-box">
+              <div class="metric-label">距離</div>
+              <div class="metric-value">{run["distance_km"]:.2f} km</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-label">平均ペース</div>
+              <div class="metric-value">{run["pace"]}</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-label">タイム</div>
+              <div class="metric-value">{run["duration"]}</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-label">平均心拍</div>
+              <div class="metric-value">{run["avg_hr"]} bpm</div>
+            </div>
+          </div>
+          <div class="gear-badge">👟 {run["gear"]}</div>
+        </div>
+        """
+        st.markdown(card_html, unsafe_allow_html=True)
+else:
+    st.info("上の「🔐 Garminログイン・データ取得」からログインして、データを取得してください。")
