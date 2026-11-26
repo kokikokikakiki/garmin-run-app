@@ -235,6 +235,12 @@ def fetch_running_activities(email_val, password_val, limit_val):
 
         distance_km = (act.get("distance") or 0) / 1000.0
         cadence = act.get("averageRunningCadenceInStepsPerMinute")
+
+        raw_ascent = act.get("elevationGain")
+        if raw_ascent is None:
+            raw_ascent = act.get("totalAscent")
+        elevation_gain = f"{int(round(raw_ascent))} m" if raw_ascent is not None else "-"
+
         run_items.append(
             {
                 "id": activity_id,
@@ -245,9 +251,9 @@ def fetch_running_activities(email_val, password_val, limit_val):
                 "duration": format_duration(act.get("duration")),
                 "avg_hr": act.get("averageHR") or "-",
                 "max_hr": act.get("maxHR") or "-",
-                "cadence": f"{int(round(cadence))} spm" if cadence else "-",
-                "calories": f"{int(act.get('calories'))} kcal" if act.get("calories") else "-",
-                "elevation_gain": f"{int(round(act.get('elevationGain')))} m" if act.get("elevationGain") else "-",
+                "cadence": f"{int(round(cadence))} spm" if cadence is not None else "-",
+                "calories": f"{int(act.get('calories'))} kcal" if act.get("calories") is not None else "-",
+                "elevation_gain": elevation_gain,
                 "gear": gear_name,
             }
         )
@@ -271,7 +277,7 @@ def fetch_activity_splits(email_val, password_val, activity_id):
                 "距離 (km)": round(dist_km, 2),
                 "タイム": format_duration(lap.get("duration")),
                 "ペース": format_pace(lap.get("averageSpeed")),
-                "平均心拍": int(lap.get("averageHR")) if lap.get("averageHR") else "-",
+                "平均心拍": int(lap.get("averageHR")) if lap.get("averageHR") is not None else "-",
             }
         )
     return rows
