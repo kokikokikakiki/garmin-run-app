@@ -317,22 +317,31 @@ def fetch_all_running_activities(email_val, password_val, status_placeholder=Non
     return run_items
 
 
-def fetch_gear_name(email_val, password_val, activity_id):
+def extract_gear_name_from_list(gear_list):
+    if not gear_list:
+        return "未登録"
+    names = [
+        g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
+        for g in gear_list
+        if g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
+    ]
+    return " / ".join(names) if names else "未登録"
+
+
+def populate_gears_for_runs(email_val, password_val, target_runs, gear_cache):
+    missing_ids = [
+        r.get("id") for r in target_runs if r.get("id") and r.get("id") not in gear_cache
+    ]
+    if not missing_ids:
+        return
+
     client = create_client(email_val, password_val)
-    gear_name = "未登録"
-    try:
-        gear_list = client.get_activity_gear(activity_id)
-        if gear_list:
-            names = [
-                g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
-                for g in gear_list
-                if g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
-            ]
-            if names:
-                gear_name = " / ".join(names)
-    except Exception:
-        pass
-    return gear_name
+    for act_id in missing_ids:
+        try:
+            gear_list = client.get_activity_gear(act_id)
+            gear_cache[act_id] = extract_gear_name_from_list(gear_list)
+        except Exception:
+            gear_cache[act_id] = "未登録"
 
 
 def fetch_activity_splits(email_val, password_val, activity_id):
@@ -439,10 +448,24 @@ if runs_data:
 
     if not display_runs:
         st.info("選択した走行距離帯に該当するランニングがありません。")
+    else:
+        creds = st.session_state.get("auth_creds", {})
+        if creds.get("email") and creds.get("password"):
+            missing_count = sum(
+                1 for r in display_runs if r.get("id") and r.get("id") not in st.session_state["gear_cache"]
+            )
+            if missing_count > 0:
+                with st.spinner(f"表示中 {len(display_runs)}件のシューズ情報を読み込み中..."):
+                    populate_gears_for_runs(
+                        creds["email"],
+                        creds["password"],
+                        display_runs,
+                        st.session_state["gear_cache"],
+                    )
 
     for run in display_runs:
         act_id = run.get("id")
-        gear_text = st.session_state["gear_cache"].get(act_id, "👟 シューズ未取得（タップで表示）")
+        gear_name = st.session_state["gear_cache"].get(act_id, "未登録")
         garmin_url = f"https://connect.garmin.com/modern/activity/{act_id}" if act_id else ""
         link_html = (
             f'<a class="garmin-link" href="{garmin_url}" target="_blank">🔗 Garmin Connectで開く</a>'
@@ -473,14 +496,14 @@ if runs_data:
             </div>
           </div>
           <div class="card-footer">
-            <span class="gear-badge">👟 {gear_text.replace("👟 ", "")}</span>
+            <span class="gear-badge">👟 {gear_name}</span>
             {link_html}
           </div>
         </div>
         """
         st.markdown(card_html, unsafe_allow_html=True)
 
-        with st.expander(f"📊 詳細データ・シューズ・ラップ ({run['name']})"):
+        with st.expander(f"📊 詳細データ・ラップ ({run['name']})"):
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("最大心拍", f"{run['max_hr']} bpm")
             c2.metric("平均ピッチ", run["cadence"])
@@ -488,14 +511,6 @@ if runs_data:
             c4.metric("消費カロリー", run["calories"])
 
             if act_id:
-                if act_id not in st.session_state["gear_cache"]:
-                    if st.button("👟 シューズ名を取得", key=f"gear_btn_{act_id}", use_container_width=True):
-                        creds = st.session_state.get("auth_creds", {})
-                        with st.spinner("シューズ情報を取得中..."):
-                            g_name = fetch_gear_name(creds["email"], creds["password"], act_id)
-                            st.session_state["gear_cache"][act_id] = g_name
-                            st.rerun()
-
                 if act_id in st.session_state["splits_cache"]:
                     laps_rows = st.session_state["splits_cache"][act_id]
                     if laps_rows:
