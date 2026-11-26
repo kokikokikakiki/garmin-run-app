@@ -1,6 +1,6 @@
 import os
-import streamlit as st
 import pandas as pd
+import streamlit as st
 from dotenv import load_dotenv
 from garminconnect import Garmin
 
@@ -29,7 +29,7 @@ st.markdown(
         color: #f8fafc !important;
       }
 
-      /* 入力欄・スライダー・ボタンの視認性向上 */
+      /* 入力欄・セレクト・ボタンの視認性向上 */
       .stTextInput input {
         background-color: #1e293b !important;
         color: #f8fafc !important;
@@ -37,6 +37,14 @@ st.markdown(
       }
       .stTextInput input::placeholder {
         color: #94a3b8 !important;
+      }
+      [data-baseweb="select"] > div {
+        background-color: #1e293b !important;
+        color: #f8fafc !important;
+        border-color: #475569 !important;
+      }
+      [data-baseweb="select"] span {
+        color: #f8fafc !important;
       }
       .stButton button {
         background-color: #1e293b !important;
@@ -177,20 +185,31 @@ if "login_expanded" not in st.session_state:
     st.session_state["login_expanded"] = True
 if "splits_cache" not in st.session_state:
     st.session_state["splits_cache"] = {}
+if "gear_cache" not in st.session_state:
+    st.session_state["gear_cache"] = {}
 if "auth_creds" not in st.session_state:
     st.session_state["auth_creds"] = {"email": "", "password": ""}
 
 
-def format_pace(avg_speed_mps):
+def calc_sec_per_km(avg_speed_mps):
     if not avg_speed_mps or avg_speed_mps <= 0:
+        return None
+    return 1000.0 / float(avg_speed_mps)
+
+
+def format_pace_from_sec(sec_per_km):
+    if sec_per_km is None or sec_per_km <= 0:
         return "-"
-    sec_per_km = 1000.0 / avg_speed_mps
     mins = int(sec_per_km // 60)
     secs = int(round(sec_per_km % 60))
     if secs == 60:
         mins += 1
         secs = 0
     return f"{mins}'{secs:02d}\"/km"
+
+
+def format_pace(avg_speed_mps):
+    return format_pace_from_sec(calc_sec_per_km(avg_speed_mps))
 
 
 def format_duration(seconds):
@@ -205,67 +224,119 @@ def format_duration(seconds):
     return f"{mins}:{secs:02d}"
 
 
-def fetch_running_activities(email_val, password_val, limit_val):
+def get_distance_bucket(distance_km):
+    if distance_km < 3.0:
+        return "3km未満"
+    if distance_km < 5.0:
+        return "3〜5km未満"
+    if distance_km < 10.0:
+        return "5〜10km未満"
+    if distance_km < 15.0:
+        return "10〜15km未満"
+    if distance_km < 20.0:
+        return "15〜20km未満"
+    if distance_km < 25.0:
+        return "ハーフ前後（20〜25km未満）"
+    if distance_km < 40.0:
+        return "25〜40km未満"
+    return "フル以上（40km〜）"
+
+
+DISTANCE_BUCKETS = [
+    "すべて",
+    "3km未満",
+    "3〜5km未満",
+    "5〜10km未満",
+    "10〜15km未満",
+    "15〜20km未満",
+    "ハーフ前後（20〜25km未満）",
+    "25〜40km未満",
+    "フル以上（40km〜）",
+]
+
+
+def create_client(email_val, password_val):
     client = Garmin(email_val, password_val)
     client.login()
+    return client
 
-    activities = client.get_activities(0, limit_val * 2)
+
+def fetch_all_running_activities(email_val, password_val, status_placeholder=None):
+    client = create_client(email_val, password_val)
     run_items = []
+    start = 0
+    batch_size = 100
+    max_total_fetch = 2000
 
-    for act in activities:
-        act_type = (act.get("activityType") or {}).get("typeKey", "")
-        if "running" not in act_type and "run" not in act_type:
-            continue
+    while start < max_total_fetch:
+        if status_placeholder:
+            status_placeholder.caption(f"全アクティビティを取得中...（{start}件目〜 / 抽出済み {len(run_items)}件）")
 
-        activity_id = act.get("activityId")
-        gear_name = "未登録"
-        if activity_id:
-            try:
-                gear_list = client.get_activity_gear(activity_id)
-                if gear_list:
-                    names = [
-                        g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
-                        for g in gear_list
-                        if g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
-                    ]
-                    if names:
-                        gear_name = " / ".join(names)
-            except Exception:
-                pass
-
-        distance_km = (act.get("distance") or 0) / 1000.0
-        cadence = act.get("averageRunningCadenceInStepsPerMinute")
-
-        raw_ascent = act.get("elevationGain")
-        if raw_ascent is None:
-            raw_ascent = act.get("totalAscent")
-        elevation_gain = f"{int(round(raw_ascent))} m" if raw_ascent is not None else "-"
-
-        run_items.append(
-            {
-                "id": activity_id,
-                "name": act.get("activityName") or "ランニング",
-                "date": act.get("startTimeLocal") or "-",
-                "distance_km": distance_km,
-                "pace": format_pace(act.get("averageSpeed")),
-                "duration": format_duration(act.get("duration")),
-                "avg_hr": act.get("averageHR") or "-",
-                "max_hr": act.get("maxHR") or "-",
-                "cadence": f"{int(round(cadence))} spm" if cadence is not None else "-",
-                "calories": f"{int(act.get('calories'))} kcal" if act.get("calories") is not None else "-",
-                "elevation_gain": elevation_gain,
-                "gear": gear_name,
-            }
-        )
-        if len(run_items) >= limit_val:
+        activities = client.get_activities(start, batch_size)
+        if not activities:
             break
+
+        for act in activities:
+            act_type = (act.get("activityType") or {}).get("typeKey", "")
+            if "running" not in act_type and "run" not in act_type:
+                continue
+
+            activity_id = act.get("activityId")
+            distance_km = (act.get("distance") or 0) / 1000.0
+            avg_speed = act.get("averageSpeed")
+            pace_sec_per_km = calc_sec_per_km(avg_speed)
+            cadence = act.get("averageRunningCadenceInStepsPerMinute")
+
+            raw_ascent = act.get("elevationGain")
+            if raw_ascent is None:
+                raw_ascent = act.get("totalAscent")
+            elevation_gain = f"{int(round(raw_ascent))} m" if raw_ascent is not None else "-"
+
+            run_items.append(
+                {
+                    "id": activity_id,
+                    "name": act.get("activityName") or "ランニング",
+                    "date": act.get("startTimeLocal") or "-",
+                    "distance_km": distance_km,
+                    "distance_bucket": get_distance_bucket(distance_km),
+                    "pace": format_pace_from_sec(pace_sec_per_km),
+                    "pace_sec_per_km": pace_sec_per_km,
+                    "duration": format_duration(act.get("duration")),
+                    "avg_hr": act.get("averageHR") or "-",
+                    "max_hr": act.get("maxHR") or "-",
+                    "cadence": f"{int(round(cadence))} spm" if cadence is not None else "-",
+                    "calories": f"{int(act.get('calories'))} kcal" if act.get("calories") is not None else "-",
+                    "elevation_gain": elevation_gain,
+                }
+            )
+
+        if len(activities) < batch_size:
+            break
+        start += batch_size
 
     return run_items
 
 
+def fetch_gear_name(email_val, password_val, activity_id):
+    client = create_client(email_val, password_val)
+    gear_name = "未登録"
+    try:
+        gear_list = client.get_activity_gear(activity_id)
+        if gear_list:
+            names = [
+                g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
+                for g in gear_list
+                if g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
+            ]
+            if names:
+                gear_name = " / ".join(names)
+    except Exception:
+        pass
+    return gear_name
+
+
 def fetch_activity_splits(email_val, password_val, activity_id):
-    client = Garmin(email_val, password_val)
-    client.login()
+    client = create_client(email_val, password_val)
     splits_data = client.get_activity_splits(activity_id)
     laps = splits_data.get("lapDTOs", []) if isinstance(splits_data, dict) else []
     rows = []
@@ -285,7 +356,7 @@ def fetch_activity_splits(email_val, password_val, activity_id):
 
 st.title("🏃 Garmin Run Dashboard")
 
-with st.expander("🔐 Garminログイン・データ取得", expanded=st.session_state["login_expanded"]):
+with st.expander("🔐 Garminログイン・全アクティビティ取得", expanded=st.session_state["login_expanded"]):
     email = st.text_input(
         "Garmin メールアドレス",
         value=os.getenv("GARMIN_EMAIL", ""),
@@ -297,30 +368,81 @@ with st.expander("🔐 Garminログイン・データ取得", expanded=st.sessio
         type="password",
         placeholder="パスワードを入力",
     )
-    limit = st.slider("取得するラン件数", min_value=3, max_value=30, value=10, step=1)
-    fetch_clicked = st.button("🔄 データを取得", use_container_width=True)
+    fetch_clicked = st.button("🔄 全ランデータを取得", use_container_width=True)
 
 if fetch_clicked:
     if not email or not password:
         st.warning("メールアドレスとパスワードの両方を入力してください。")
     else:
-        with st.spinner("Garmin Connect からランデータを取得中..."):
+        status_box = st.empty()
+        with st.spinner("Garmin Connect から全ランニング履歴を取得中..."):
             try:
                 clean_email = email.strip()
-                runs = fetch_running_activities(clean_email, password, int(limit))
+                runs = fetch_all_running_activities(clean_email, password, status_box)
                 st.session_state["runs_data"] = runs
                 st.session_state["auth_creds"] = {"email": clean_email, "password": password}
                 st.session_state["splits_cache"] = {}
+                st.session_state["gear_cache"] = {}
                 st.session_state["login_expanded"] = False
+                status_box.empty()
                 st.rerun()
             except Exception as e:
+                status_box.empty()
                 st.error(f"データ取得に失敗しました: {e}")
 
 runs_data = st.session_state.get("runs_data", [])
 
 if runs_data:
-    for run in runs_data:
+    st.markdown("### 🔎 距離帯フィルター & 平均ペース順ソート")
+    col_filter, col_sort, col_limit = st.columns([2, 2, 1])
+
+    with col_filter:
+        selected_bucket = st.selectbox("走行距離帯（全履歴から選択）", DISTANCE_BUCKETS, index=0)
+
+    with col_sort:
+        sort_order = st.selectbox(
+            "並び順",
+            [
+                "平均ペースが速い順",
+                "平均ペースが遅い順",
+                "日付が新しい順",
+                "距離が長い順",
+            ],
+            index=0,
+        )
+
+    with col_limit:
+        max_display = st.selectbox("表示件数", [10, 20, 50, 100], index=0)
+
+    filtered_runs = [
+        r for r in runs_data if selected_bucket == "すべて" or r.get("distance_bucket") == selected_bucket
+    ]
+
+    if sort_order == "平均ペースが速い順":
+        filtered_runs = sorted(
+            filtered_runs,
+            key=lambda x: (x["pace_sec_per_km"] is None, x["pace_sec_per_km"] or 999999),
+        )
+    elif sort_order == "平均ペースが遅い順":
+        filtered_runs = sorted(
+            filtered_runs,
+            key=lambda x: (x["pace_sec_per_km"] is None, -(x["pace_sec_per_km"] or 0)),
+        )
+    elif sort_order == "日付が新しい順":
+        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("date") or "", reverse=True)
+    elif sort_order == "距離が長い順":
+        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("distance_km") or 0.0, reverse=True)
+
+    st.caption(f"全ラン {len(runs_data)}件 中 / 該当 {len(filtered_runs)}件（上位 {min(len(filtered_runs), max_display)}件を表示）")
+
+    display_runs = filtered_runs[:max_display]
+
+    if not display_runs:
+        st.info("選択した走行距離帯に該当するランニングがありません。")
+
+    for run in display_runs:
         act_id = run.get("id")
+        gear_text = st.session_state["gear_cache"].get(act_id, "👟 シューズ未取得（タップで表示）")
         garmin_url = f"https://connect.garmin.com/modern/activity/{act_id}" if act_id else ""
         link_html = (
             f'<a class="garmin-link" href="{garmin_url}" target="_blank">🔗 Garmin Connectで開く</a>'
@@ -331,7 +453,7 @@ if runs_data:
         card_html = f"""
         <div class="run-card">
           <div class="run-title">{run["name"]}</div>
-          <div class="run-date">📅 {run["date"]}</div>
+          <div class="run-date">📅 {run["date"]} ・ {run["distance_bucket"]}</div>
           <div class="metric-grid">
             <div class="metric-box">
               <div class="metric-label">距離</div>
@@ -351,14 +473,14 @@ if runs_data:
             </div>
           </div>
           <div class="card-footer">
-            <span class="gear-badge">👟 {run["gear"]}</span>
+            <span class="gear-badge">👟 {gear_text.replace("👟 ", "")}</span>
             {link_html}
           </div>
         </div>
         """
         st.markdown(card_html, unsafe_allow_html=True)
 
-        with st.expander(f"📊 詳細データ・ラップ ({run['name']})"):
+        with st.expander(f"📊 詳細データ・シューズ・ラップ ({run['name']})"):
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("最大心拍", f"{run['max_hr']} bpm")
             c2.metric("平均ピッチ", run["cadence"])
@@ -366,6 +488,14 @@ if runs_data:
             c4.metric("消費カロリー", run["calories"])
 
             if act_id:
+                if act_id not in st.session_state["gear_cache"]:
+                    if st.button("👟 シューズ名を取得", key=f"gear_btn_{act_id}", use_container_width=True):
+                        creds = st.session_state.get("auth_creds", {})
+                        with st.spinner("シューズ情報を取得中..."):
+                            g_name = fetch_gear_name(creds["email"], creds["password"], act_id)
+                            st.session_state["gear_cache"][act_id] = g_name
+                            st.rerun()
+
                 if act_id in st.session_state["splits_cache"]:
                     laps_rows = st.session_state["splits_cache"][act_id]
                     if laps_rows:
@@ -385,4 +515,4 @@ if runs_data:
 
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 else:
-    st.info("上の「🔐 Garminログイン・データ取得」からログインして、データを取得してください。")
+    st.info("上の「🔐 Garminログイン・全アクティビティ取得」からログインして、データを取得してください。")
