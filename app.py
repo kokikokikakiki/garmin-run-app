@@ -146,9 +146,9 @@ def fetch_running_activities(email_val, password_val, limit_val):
                 gear_list = client.get_activity_gear(activity_id)
                 if gear_list:
                     names = [
-                        g.get("customMakeModel") or g.get("gearModelName") or g.get("displayName")
+                        g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
                         for g in gear_list
-                        if g.get("customMakeModel") or g.get("gearModelName") or g.get("displayName")
+                        if g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
                     ]
                     if names:
                         gear_name = " / ".join(names)
