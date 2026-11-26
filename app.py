@@ -25,23 +25,78 @@ st.markdown(
         padding-bottom: 2.5rem;
         max-width: 960px;
       }
+      h1, h2, h3, p, label, .stMarkdown {
+        color: #f8fafc !important;
+      }
+
+      /* 入力欄・スライダー・ボタンの視認性向上 */
+      .stTextInput input {
+        background-color: #1e293b !important;
+        color: #f8fafc !important;
+        border: 1px solid #475569 !important;
+      }
+      .stTextInput input::placeholder {
+        color: #94a3b8 !important;
+      }
+      .stButton button {
+        background-color: #1e293b !important;
+        color: #f8fafc !important;
+        border: 1px solid #38bdf8 !important;
+        font-weight: 600 !important;
+      }
+      .stButton button:hover {
+        background-color: #0284c7 !important;
+        color: #ffffff !important;
+      }
+
+      /* エキスパンダー（ログイン枠・詳細データ枠）の視認性向上 */
+      [data-testid="stExpander"] {
+        background-color: #111827 !important;
+        border: 1px solid #334155 !important;
+        border-radius: 14px !important;
+      }
+      [data-testid="stExpander"] summary {
+        color: #f8fafc !important;
+        font-weight: 700 !important;
+      }
+      [data-testid="stExpander"] summary span,
+      [data-testid="stExpander"] summary p {
+        color: #f8fafc !important;
+      }
+
+      /* メトリクス表示の文字色 */
+      [data-testid="stMetricLabel"] {
+        color: #cbd5e1 !important;
+      }
+      [data-testid="stMetricValue"] {
+        color: #7dd3fc !important;
+        font-weight: 700 !important;
+      }
+
+      /* ラップテーブルの文字色 */
+      [data-testid="stDataFrame"] {
+        background-color: #0f172a !important;
+        border-radius: 10px !important;
+      }
+
+      /* ランカード */
       .run-card {
         background: linear-gradient(145deg, #111827, #0f172a);
-        border: 1px solid #1e293b;
+        border: 1px solid #334155;
         border-radius: 16px;
         padding: 18px;
         margin-bottom: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
       }
       .run-title {
         font-size: 1.1rem;
         font-weight: 700;
-        color: #f8fafc;
+        color: #ffffff;
         margin-bottom: 4px;
       }
       .run-date {
-        font-size: 0.85rem;
-        color: #94a3b8;
+        font-size: 0.88rem;
+        color: #cbd5e1;
         margin-bottom: 12px;
       }
       .metric-grid {
@@ -50,14 +105,14 @@ st.markdown(
         gap: 10px;
       }
       .metric-box {
-        background-color: rgba(30, 41, 59, 0.55);
-        border: 1px solid rgba(148, 163, 184, 0.14);
+        background-color: #1e293b;
+        border: 1px solid #334155;
         border-radius: 12px;
         padding: 10px 12px;
       }
       .metric-label {
-        font-size: 0.75rem;
-        color: #94a3b8;
+        font-size: 0.78rem;
+        color: #cbd5e1;
         margin-bottom: 2px;
       }
       .metric-value {
@@ -75,22 +130,22 @@ st.markdown(
       }
       .gear-badge {
         display: inline-block;
-        padding: 4px 10px;
+        padding: 5px 11px;
         border-radius: 999px;
-        background-color: rgba(56, 189, 248, 0.14);
-        border: 1px solid rgba(56, 189, 248, 0.35);
-        color: #7dd3fc;
-        font-size: 0.8rem;
+        background-color: #0c4a6e;
+        border: 1px solid #38bdf8;
+        color: #e0f2fe;
+        font-size: 0.82rem;
         font-weight: 600;
       }
       .garmin-link {
         display: inline-block;
-        padding: 4px 10px;
+        padding: 5px 11px;
         border-radius: 999px;
-        background-color: rgba(16, 185, 129, 0.14);
-        border: 1px solid rgba(16, 185, 129, 0.35);
-        color: #6ee7b7 !important;
-        font-size: 0.8rem;
+        background-color: #064e3b;
+        border: 1px solid #34d399;
+        color: #ecfdf5 !important;
+        font-size: 0.82rem;
         font-weight: 600;
         text-decoration: none;
       }
