@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+import pandas as pd
 from dotenv import load_dotenv
 from garminconnect import Garmin
 
@@ -29,7 +30,7 @@ st.markdown(
         border: 1px solid #1e293b;
         border-radius: 16px;
         padding: 18px;
-        margin-bottom: 14px;
+        margin-bottom: 8px;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
       }
       .run-title {
@@ -64,9 +65,16 @@ st.markdown(
         font-weight: 700;
         color: #38bdf8;
       }
+      .card-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
       .gear-badge {
         display: inline-block;
-        margin-top: 12px;
         padding: 4px 10px;
         border-radius: 999px;
         background-color: rgba(56, 189, 248, 0.14);
@@ -74,6 +82,17 @@ st.markdown(
         color: #7dd3fc;
         font-size: 0.8rem;
         font-weight: 600;
+      }
+      .garmin-link {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background-color: rgba(16, 185, 129, 0.14);
+        border: 1px solid rgba(16, 185, 129, 0.35);
+        color: #6ee7b7 !important;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-decoration: none;
       }
       @media (max-width: 640px) {
         .block-container {
@@ -101,6 +120,10 @@ if "runs_data" not in st.session_state:
     st.session_state["runs_data"] = []
 if "login_expanded" not in st.session_state:
     st.session_state["login_expanded"] = True
+if "splits_cache" not in st.session_state:
+    st.session_state["splits_cache"] = {}
+if "auth_creds" not in st.session_state:
+    st.session_state["auth_creds"] = {"email": "", "password": ""}
 
 
 def format_pace(avg_speed_mps):
@@ -156,14 +179,20 @@ def fetch_running_activities(email_val, password_val, limit_val):
                 pass
 
         distance_km = (act.get("distance") or 0) / 1000.0
+        cadence = act.get("averageRunningCadenceInStepsPerMinute")
         run_items.append(
             {
+                "id": activity_id,
                 "name": act.get("activityName") or "ランニング",
                 "date": act.get("startTimeLocal") or "-",
                 "distance_km": distance_km,
                 "pace": format_pace(act.get("averageSpeed")),
                 "duration": format_duration(act.get("duration")),
                 "avg_hr": act.get("averageHR") or "-",
+                "max_hr": act.get("maxHR") or "-",
+                "cadence": f"{int(round(cadence))} spm" if cadence else "-",
+                "calories": f"{int(act.get('calories'))} kcal" if act.get("calories") else "-",
+                "elevation_gain": f"{int(round(act.get('elevationGain')))} m" if act.get("elevationGain") else "-",
                 "gear": gear_name,
             }
         )
@@ -171,6 +200,26 @@ def fetch_running_activities(email_val, password_val, limit_val):
             break
 
     return run_items
+
+
+def fetch_activity_splits(email_val, password_val, activity_id):
+    client = Garmin(email_val, password_val)
+    client.login()
+    splits_data = client.get_activity_splits(activity_id)
+    laps = splits_data.get("lapDTOs", []) if isinstance(splits_data, dict) else []
+    rows = []
+    for idx, lap in enumerate(laps, start=1):
+        dist_km = (lap.get("distance") or 0) / 1000.0
+        rows.append(
+            {
+                "ラップ": idx,
+                "距離 (km)": round(dist_km, 2),
+                "タイム": format_duration(lap.get("duration")),
+                "ペース": format_pace(lap.get("averageSpeed")),
+                "平均心拍": int(lap.get("averageHR")) if lap.get("averageHR") else "-",
+            }
+        )
+    return rows
 
 
 st.title("🏃 Garmin Run Dashboard")
@@ -196,8 +245,11 @@ if fetch_clicked:
     else:
         with st.spinner("Garmin Connect からランデータを取得中..."):
             try:
-                runs = fetch_running_activities(email.strip(), password, int(limit))
+                clean_email = email.strip()
+                runs = fetch_running_activities(clean_email, password, int(limit))
                 st.session_state["runs_data"] = runs
+                st.session_state["auth_creds"] = {"email": clean_email, "password": password}
+                st.session_state["splits_cache"] = {}
                 st.session_state["login_expanded"] = False
                 st.rerun()
             except Exception as e:
@@ -207,6 +259,14 @@ runs_data = st.session_state.get("runs_data", [])
 
 if runs_data:
     for run in runs_data:
+        act_id = run.get("id")
+        garmin_url = f"https://connect.garmin.com/modern/activity/{act_id}" if act_id else ""
+        link_html = (
+            f'<a class="garmin-link" href="{garmin_url}" target="_blank">🔗 Garmin Connectで開く</a>'
+            if garmin_url
+            else ""
+        )
+
         card_html = f"""
         <div class="run-card">
           <div class="run-title">{run["name"]}</div>
@@ -229,9 +289,39 @@ if runs_data:
               <div class="metric-value">{run["avg_hr"]} bpm</div>
             </div>
           </div>
-          <div class="gear-badge">👟 {run["gear"]}</div>
+          <div class="card-footer">
+            <span class="gear-badge">👟 {run["gear"]}</span>
+            {link_html}
+          </div>
         </div>
         """
         st.markdown(card_html, unsafe_allow_html=True)
+
+        with st.expander(f"📊 詳細データ・ラップ ({run['name']})"):
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("最大心拍", f"{run['max_hr']} bpm")
+            c2.metric("平均ピッチ", run["cadence"])
+            c3.metric("獲得標高", run["elevation_gain"])
+            c4.metric("消費カロリー", run["calories"])
+
+            if act_id:
+                if act_id in st.session_state["splits_cache"]:
+                    laps_rows = st.session_state["splits_cache"][act_id]
+                    if laps_rows:
+                        st.dataframe(pd.DataFrame(laps_rows), use_container_width=True, hide_index=True)
+                    else:
+                        st.caption("ラップデータがありません。")
+                else:
+                    if st.button("⏱ ラップタイムを読み込む", key=f"lap_btn_{act_id}", use_container_width=True):
+                        creds = st.session_state.get("auth_creds", {})
+                        with st.spinner("ラップを取得中..."):
+                            try:
+                                rows = fetch_activity_splits(creds["email"], creds["password"], act_id)
+                                st.session_state["splits_cache"][act_id] = rows
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"ラップ取得エラー: {e}")
+
+        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 else:
     st.info("上の「🔐 Garminログイン・データ取得」からログインして、データを取得してください。")
