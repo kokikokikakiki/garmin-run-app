@@ -1,0 +1,5 @@
+.venv/
+.env
+.garmin_session/
+__pycache__/
+*.pyc
