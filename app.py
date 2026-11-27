@@ -16,7 +16,7 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      /* 上部のGitHubアイコン・ツールバー・装飾バー・フッターバッジを非表示 */
+      /* 上部のGitHubアイコン・ツールバー・右下のStreamlitバッジをすべて非表示 */
       [data-testid="stToolbar"],
       [data-testid="stHeaderActionElements"],
       [data-testid="stDecoration"],
@@ -24,9 +24,13 @@ st.markdown(
       #MainMenu,
       footer,
       .stAppDeployButton,
-      div[class*="viewerBadge"] {
+      div[class*="viewerBadge"],
+      div[class*="StatusWidget"],
+      a[href*="streamlit.io"] {
         display: none !important;
         visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
       }
 
       header[data-testid="stHeader"] {
