@@ -16,6 +16,24 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+      /* 上部のGitHubアイコン・ツールバー・装飾バー・フッターバッジを非表示 */
+      [data-testid="stToolbar"],
+      [data-testid="stHeaderActionElements"],
+      [data-testid="stDecoration"],
+      [data-testid="stStatusWidget"],
+      #MainMenu,
+      footer,
+      .stAppDeployButton,
+      div[class*="viewerBadge"] {
+        display: none !important;
+        visibility: hidden !important;
+      }
+
+      header[data-testid="stHeader"] {
+        background-color: transparent !important;
+        height: 0px !important;
+      }
+
       .stApp {
         background-color: #0b1120;
         color: #f8fafc;
