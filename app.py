@@ -77,6 +77,18 @@ st.markdown(
         line-height: 1.1;
       }
 
+      /* 自前ダーク案内ボックス */
+      .guide-box {
+        background-color: #111827;
+        border: 1px solid #38bdf8;
+        border-radius: 12px;
+        padding: 14px 16px;
+        color: #f8fafc;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        margin-top: 8px;
+      }
+
       /* 案内ボックス（st.info）の視認性向上 */
       [data-testid="stAlert"] {
         background-color: #1e293b !important;
@@ -88,10 +100,6 @@ st.markdown(
       [data-testid="stAlert"] div,
       [data-testid="stAlert"] span {
         color: #f8fafc !important;
-      }
-      [data-testid="stAlert"] svg {
-        fill: #38bdf8 !important;
-        color: #38bdf8 !important;
       }
 
       /* 入力欄・セレクト・ボタンの視認性向上 */
@@ -536,7 +544,10 @@ if runs_data:
     display_runs = filtered_runs[:max_display]
 
     if not display_runs:
-        st.info("選択した走行距離帯に該当するランニングがありません。")
+        st.markdown(
+            '<div class="guide-box">選択した走行距離帯に該当するランニングがありません。</div>',
+            unsafe_allow_html=True,
+        )
     else:
         creds = st.session_state.get("auth_creds", {})
         if creds.get("email") and creds.get("password"):
@@ -619,4 +630,7 @@ if runs_data:
 
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 else:
-    st.info("上の「🔐 Garminログイン・全アクティビティ取得」からログインして、データを取得してください。")
+    st.markdown(
+        '<div class="guide-box">上の「🔐 Garminログイン・全アクティビティ取得」からログインして、データを取得してください。</div>',
+        unsafe_allow_html=True,
+    )
