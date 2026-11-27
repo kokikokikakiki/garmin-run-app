@@ -7,7 +7,7 @@ from garminconnect import Garmin
 load_dotenv()
 
 st.set_page_config(
-    page_title="Garmin Run Dashboard",
+    page_title="Garmin Run",
     page_icon="🏃",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -51,6 +51,49 @@ st.markdown(
         color: #f8fafc !important;
       }
 
+      /* トップタイトル（ピクトグラム風SVGアイコン + Garmin Run） */
+      .app-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 1.1rem;
+      }
+      .run-pictogram {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 9px;
+        background-color: #38bdf8;
+        color: #0b1120;
+        flex-shrink: 0;
+      }
+      .app-title-text {
+        font-size: 1.85rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: #ffffff;
+        line-height: 1.1;
+      }
+
+      /* 案内ボックス（st.info）の視認性向上 */
+      [data-testid="stAlert"] {
+        background-color: #1e293b !important;
+        color: #f8fafc !important;
+        border: 1px solid #38bdf8 !important;
+        border-radius: 12px !important;
+      }
+      [data-testid="stAlert"] p,
+      [data-testid="stAlert"] div,
+      [data-testid="stAlert"] span {
+        color: #f8fafc !important;
+      }
+      [data-testid="stAlert"] svg {
+        fill: #38bdf8 !important;
+        color: #38bdf8 !important;
+      }
+
       /* 入力欄・セレクト・ボタンの視認性向上 */
       .stTextInput input {
         background-color: #1e293b !important;
@@ -85,9 +128,17 @@ st.markdown(
         border: 1px solid #334155 !important;
         border-radius: 14px !important;
       }
+      [data-testid="stExpander"] details,
+      [data-testid="stExpander"] details > div,
+      [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+        background-color: #111827 !important;
+        color: #f8fafc !important;
+      }
       [data-testid="stExpander"] summary {
+        background-color: #111827 !important;
         color: #f8fafc !important;
         font-weight: 700 !important;
+        border-radius: 14px !important;
       }
       [data-testid="stExpander"] summary span,
       [data-testid="stExpander"] summary p {
@@ -184,6 +235,9 @@ st.markdown(
           padding-top: 1rem !important;
           padding-left: 0.75rem !important;
           padding-right: 0.75rem !important;
+        }
+        .app-title-text {
+          font-size: 1.5rem;
         }
         .run-card {
           padding: 14px !important;
@@ -385,7 +439,20 @@ def fetch_activity_splits(email_val, password_val, activity_id):
     return rows
 
 
-st.title("🏃 Garmin Run Dashboard")
+st.markdown(
+    """
+    <div class="app-header">
+      <span class="run-pictogram" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="15.5" cy="4.5" r="2.2" />
+          <path d="M13.5 7.5l-3.2 1.6-2.3 3.4 1.7 1.1 1.9-2.8 1.5-.7-1.7 5.5-4.3 2.4.9 1.8 4.8-2.7 1.3-4.1 2.9 2.4-.5 5.4h2l.6-6.3-2.9-2.5 1.2-3.8 2.4 1.2 1.8-1.5-1.1-1.3-1.4 1.2z" />
+        </svg>
+      </span>
+      <span class="app-title-text">Garmin Run</span>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 with st.expander("🔐 Garminログイン・全アクティビティ取得", expanded=st.session_state["login_expanded"]):
     email = st.text_input(
