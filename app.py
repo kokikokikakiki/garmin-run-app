@@ -793,7 +793,11 @@ if runs_data:
                 period_runs = runs_data
                 period_label = "全期間"
         with r_col3:
-            shoe_sort_by = st.selectbox("ランキング基準", ["総走行距離順", "使用回数順"], index=0)
+            shoe_sort_by = st.selectbox(
+                "ランキング基準",
+                ["総走行距離順", "使用回数順", "平均ペースが速い順"],
+                index=0,
+            )
 
         creds = st.session_state.get("auth_creds", {})
         missing_in_period = [
@@ -835,7 +839,6 @@ if runs_data:
             dist_km = r.get("distance_km") or 0.0
             dur_sec = r.get("duration_sec") or 0.0
             shoes_for_run = get_cached_shoes_only(st.session_state["gear_cache"], act_id)
-            # 「シューズ」種別のみ抽出（その他ギアや複合ギアの混在はシューズ単体のみ集計）
             for shoe_name in shoes_for_run:
                 shoe_stats[shoe_name]["count"] += 1
                 shoe_stats[shoe_name]["distance_km"] += dist_km
@@ -849,20 +852,26 @@ if runs_data:
                 avg_sec_per_km = total_sec / total_km
                 avg_pace_str = format_pace_from_sec(avg_sec_per_km)
             else:
+                avg_sec_per_km = None
                 avg_pace_str = "-"
             ranking_list.append(
                 {
                     "shoe": shoe_name,
                     "count": info["count"],
                     "distance_km": total_km,
+                    "avg_sec_per_km": avg_sec_per_km,
                     "avg_pace": avg_pace_str,
                 }
             )
 
         if shoe_sort_by == "総走行距離順":
             ranking_list.sort(key=lambda x: (-x["distance_km"], -x["count"]))
-        else:
+        elif shoe_sort_by == "使用回数順":
             ranking_list.sort(key=lambda x: (-x["count"], -x["distance_km"]))
+        else:
+            ranking_list.sort(
+                key=lambda x: (x["avg_sec_per_km"] is None, x["avg_sec_per_km"] or 999999, -x["distance_km"])
+            )
 
         total_period_km = sum(r.get("distance_km") or 0.0 for r in period_runs)
         st.caption(f"{period_label} のラン合計：{len(period_runs)}回 / {total_period_km:.2f} km（シューズ種別のみ集計）")
