@@ -131,7 +131,7 @@ st.markdown(
         color: #ffffff !important;
       }
 
-      /* エキスパンダー（ログイン枠・詳細データ枠）の視認性向上 */
+      /* エキスパンダー（ログイン枠・詳細データ枠・シューズ別アクティビティ枠）の視認性向上 */
       [data-testid="stExpander"] {
         background-color: #111827 !important;
         border: 1px solid #334155 !important;
@@ -175,7 +175,7 @@ st.markdown(
         border: 1px solid #334155;
         border-radius: 14px;
         padding: 14px 16px;
-        margin-bottom: 10px;
+        margin-bottom: 6px;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -222,6 +222,30 @@ st.markdown(
       }
       .shoe-rank-count {
         font-size: 0.82rem;
+        color: #cbd5e1;
+        margin-top: 2px;
+      }
+
+      /* シューズ別アクティビティ行 */
+      .shoe-act-row {
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .shoe-act-title {
+        font-size: 0.92rem;
+        font-weight: 700;
+        color: #ffffff;
+      }
+      .shoe-act-meta {
+        font-size: 0.8rem;
         color: #cbd5e1;
         margin-top: 2px;
       }
@@ -332,7 +356,7 @@ if "gear_cache" not in st.session_state:
 if "auth_creds" not in st.session_state:
     st.session_state["auth_creds"] = {"email": "", "password": ""}
 if "active_view" not in st.session_state:
-    st.session_state["active_view"] = "distance"
+    st.session_state["active_view"] = None
 
 
 def calc_sec_per_km(avg_speed_mps):
@@ -470,7 +494,6 @@ def fetch_all_running_activities(email_val, password_val, status_placeholder=Non
 
 
 def _is_shoe_gear(gear_item):
-    """ギア項目がシューズ種別かどうかを判定する。"""
     if not isinstance(gear_item, dict):
         return False
     g_type_obj = gear_item.get("gearType")
@@ -486,7 +509,6 @@ def _is_shoe_gear(gear_item):
 
 
 def parse_gear_info(gear_list):
-    """カード表示用のギア文字列と、シューズランキング用の純粋なシューズ名リストを返す。"""
     if not gear_list:
         return {"display_gear": "未登録", "shoes_only": []}
 
@@ -612,7 +634,7 @@ if fetch_clicked:
                 st.session_state["splits_cache"] = {}
                 st.session_state["gear_cache"] = {}
                 st.session_state["login_expanded"] = False
-                st.session_state["active_view"] = "distance"
+                st.session_state["active_view"] = None
                 status_box.empty()
                 st.rerun()
             except Exception as e:
@@ -622,7 +644,6 @@ if fetch_clicked:
 runs_data = st.session_state.get("runs_data", [])
 
 if runs_data:
-    # --- ログイン後の表示切り替えボタン ---
     nav_col1, nav_col2 = st.columns(2)
     with nav_col1:
         if st.button("📏 距離別ランデータ", use_container_width=True):
@@ -635,9 +656,16 @@ if runs_data:
 
     st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
 
+    # --- 未選択時：ボタンを押すまで表示しない ---
+    if st.session_state["active_view"] is None:
+        st.markdown(
+            '<div class="guide-box">上の「📏 距離別ランデータ」または「👟 シューズランキング」ボタンを押すと表示されます。</div>',
+            unsafe_allow_html=True,
+        )
+
     # --- 1) 距離別ランデータ ---
-    if st.session_state["active_view"] == "distance":
-        st.markdown("### 🔎 距離帯フィルター & 平均ペース順ソート")
+    elif st.session_state["active_view"] == "distance":
+        st.markdown("### 距離別ランデータ")
         col_filter, col_sort, col_limit = st.columns([2, 2, 1])
 
         with col_filter:
@@ -833,7 +861,9 @@ if runs_data:
                     prog_box.empty()
                     st.rerun()
 
-        shoe_stats = defaultdict(lambda: {"count": 0, "distance_km": 0.0, "duration_sec": 0.0})
+        shoe_stats = defaultdict(
+            lambda: {"count": 0, "distance_km": 0.0, "duration_sec": 0.0, "activities": []}
+        )
         for r in period_runs:
             act_id = r.get("id")
             dist_km = r.get("distance_km") or 0.0
@@ -843,6 +873,7 @@ if runs_data:
                 shoe_stats[shoe_name]["count"] += 1
                 shoe_stats[shoe_name]["distance_km"] += dist_km
                 shoe_stats[shoe_name]["duration_sec"] += dur_sec
+                shoe_stats[shoe_name]["activities"].append(r)
 
         ranking_list = []
         for shoe_name, info in shoe_stats.items():
@@ -861,6 +892,7 @@ if runs_data:
                     "distance_km": total_km,
                     "avg_sec_per_km": avg_sec_per_km,
                     "avg_pace": avg_pace_str,
+                    "activities": info["activities"],
                 }
             )
 
@@ -896,6 +928,26 @@ if runs_data:
                 </div>
                 """
                 st.markdown(rank_html, unsafe_allow_html=True)
+
+                with st.expander(f"👟 {item['shoe']} のアクティビティを見る（{item['count']}件）"):
+                    for act in item["activities"]:
+                        a_id = act.get("id")
+                        g_url = f"https://connect.garmin.com/modern/activity/{a_id}" if a_id else ""
+                        g_btn = (
+                            f'<a class="garmin-link" href="{g_url}" target="_blank">🔗 Garmin Connect</a>'
+                            if g_url
+                            else ""
+                        )
+                        row_html = f"""
+                        <div class="shoe-act-row">
+                          <div>
+                            <div class="shoe-act-title">{act["name"]}</div>
+                            <div class="shoe-act-meta">📅 {act["date"]} ・ {act["distance_km"]:.2f} km ・ {act["pace"]} ・ {act["duration"]}</div>
+                          </div>
+                          <div>{g_btn}</div>
+                        </div>
+                        """
+                        st.markdown(row_html, unsafe_allow_html=True)
         else:
             st.markdown(
                 '<div class="guide-box">対象期間にシューズ種別として登録されたギアのデータがありません。</div>',
