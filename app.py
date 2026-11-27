@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
@@ -166,6 +167,63 @@ st.markdown(
       [data-testid="stDataFrame"] {
         background-color: #0f172a !important;
         border-radius: 10px !important;
+      }
+
+      /* シューズランキングカード */
+      .shoe-rank-card {
+        background: linear-gradient(145deg, #111827, #0f172a);
+        border: 1px solid #334155;
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      .shoe-rank-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+      .rank-badge {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #38bdf8;
+        min-width: 44px;
+        text-align: center;
+      }
+      .shoe-rank-name {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #ffffff;
+        word-break: break-word;
+      }
+      .shoe-rank-sub {
+        font-size: 0.8rem;
+        color: #94a3b8;
+        margin-top: 2px;
+      }
+      .shoe-rank-pace {
+        font-size: 0.84rem;
+        color: #7dd3fc;
+        font-weight: 600;
+        margin-top: 3px;
+      }
+      .shoe-rank-right {
+        text-align: right;
+        flex-shrink: 0;
+      }
+      .shoe-rank-dist {
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: #38bdf8;
+      }
+      .shoe-rank-count {
+        font-size: 0.82rem;
+        color: #cbd5e1;
+        margin-top: 2px;
       }
 
       /* ランカード */
@@ -366,7 +424,12 @@ def fetch_all_running_activities(email_val, password_val, status_placeholder=Non
                 continue
 
             activity_id = act.get("activityId")
+            date_str = act.get("startTimeLocal") or "-"
+            year_str = date_str[:4] if len(date_str) >= 4 and date_str[:4].isdigit() else "不明"
+            ym_str = date_str[:7] if len(date_str) >= 7 and date_str[:4].isdigit() else "不明"
+
             distance_km = (act.get("distance") or 0) / 1000.0
+            duration_sec = float(act.get("duration") or 0.0)
             avg_speed = act.get("averageSpeed")
             pace_sec_per_km = calc_sec_per_km(avg_speed)
             cadence = act.get("averageRunningCadenceInStepsPerMinute")
@@ -380,12 +443,15 @@ def fetch_all_running_activities(email_val, password_val, status_placeholder=Non
                 {
                     "id": activity_id,
                     "name": act.get("activityName") or "ランニング",
-                    "date": act.get("startTimeLocal") or "-",
+                    "date": date_str,
+                    "year": year_str,
+                    "year_month": ym_str,
                     "distance_km": distance_km,
+                    "duration_sec": duration_sec,
                     "distance_bucket": get_distance_bucket(distance_km),
                     "pace": format_pace_from_sec(pace_sec_per_km),
                     "pace_sec_per_km": pace_sec_per_km,
-                    "duration": format_duration(act.get("duration")),
+                    "duration": format_duration(duration_sec),
                     "avg_hr": act.get("averageHR") or "-",
                     "max_hr": act.get("maxHR") or "-",
                     "cadence": f"{int(round(cadence))} spm" if cadence is not None else "-",
@@ -412,7 +478,7 @@ def extract_gear_name_from_list(gear_list):
     return " / ".join(names) if names else "未登録"
 
 
-def populate_gears_for_runs(email_val, password_val, target_runs, gear_cache):
+def populate_gears_for_runs(email_val, password_val, target_runs, gear_cache, progress_placeholder=None):
     missing_ids = [
         r.get("id") for r in target_runs if r.get("id") and r.get("id") not in gear_cache
     ]
@@ -420,7 +486,10 @@ def populate_gears_for_runs(email_val, password_val, target_runs, gear_cache):
         return
 
     client = create_client(email_val, password_val)
-    for act_id in missing_ids:
+    total = len(missing_ids)
+    for idx, act_id in enumerate(missing_ids, start=1):
+        if progress_placeholder:
+            progress_placeholder.caption(f"シューズ情報を取得中...（{idx} / {total}件）")
         try:
             gear_list = client.get_activity_gear(act_id)
             gear_cache[act_id] = extract_gear_name_from_list(gear_list)
@@ -445,6 +514,16 @@ def fetch_activity_splits(email_val, password_val, activity_id):
             }
         )
     return rows
+
+
+def format_rank_label(rank_idx):
+    if rank_idx == 1:
+        return "🥇 1位"
+    if rank_idx == 2:
+        return "🥈 2位"
+    if rank_idx == 3:
+        return "🥉 3位"
+    return f"{rank_idx}位"
 
 
 st.markdown(
@@ -499,6 +578,131 @@ if fetch_clicked:
 runs_data = st.session_state.get("runs_data", [])
 
 if runs_data:
+    # --- シューズ使用ランキング（年別・月別・全期間） ---
+    with st.expander("👟 シューズ使用ランキング（年別・月別）", expanded=True):
+        years = sorted({r["year"] for r in runs_data if r.get("year") and r["year"] != "不明"}, reverse=True)
+        year_months = sorted(
+            {r["year_month"] for r in runs_data if r.get("year_month") and r["year_month"] != "不明"},
+            reverse=True,
+        )
+
+        r_col1, r_col2, r_col3 = st.columns([1.2, 1.5, 1.5])
+        with r_col1:
+            period_mode = st.selectbox("集計単位", ["月別", "年別", "全期間"], index=0)
+        with r_col2:
+            if period_mode == "月別":
+                selected_period = st.selectbox("対象月", year_months if year_months else ["不明"], index=0)
+                period_runs = [r for r in runs_data if r.get("year_month") == selected_period]
+                period_label = f"{selected_period}"
+            elif period_mode == "年別":
+                selected_period = st.selectbox("対象年", years if years else ["不明"], index=0)
+                period_runs = [r for r in runs_data if r.get("year") == selected_period]
+                period_label = f"{selected_period}年"
+            else:
+                period_runs = runs_data
+                period_label = "全期間"
+        with r_col3:
+            shoe_sort_by = st.selectbox("ランキング基準", ["総走行距離順", "使用回数順"], index=0)
+
+        creds = st.session_state.get("auth_creds", {})
+        missing_in_period = [
+            r for r in period_runs if r.get("id") and r.get("id") not in st.session_state["gear_cache"]
+        ]
+
+        if missing_in_period and creds.get("email") and creds.get("password"):
+            if period_mode == "月別" or len(missing_in_period) <= 40:
+                prog_box = st.empty()
+                with st.spinner(f"{period_label} のシューズ使用状況を集計中..."):
+                    populate_gears_for_runs(
+                        creds["email"],
+                        creds["password"],
+                        period_runs,
+                        st.session_state["gear_cache"],
+                        prog_box,
+                    )
+                prog_box.empty()
+            else:
+                if st.button(
+                    f"👟 {period_label} のシューズデータをすべて読み込んで集計する（未取得 {len(missing_in_period)}件）",
+                    use_container_width=True,
+                ):
+                    prog_box = st.empty()
+                    with st.spinner(f"{period_label} のシューズ情報を読み込み中..."):
+                        populate_gears_for_runs(
+                            creds["email"],
+                            creds["password"],
+                            period_runs,
+                            st.session_state["gear_cache"],
+                            prog_box,
+                        )
+                    prog_box.empty()
+                    st.rerun()
+
+        shoe_stats = defaultdict(lambda: {"count": 0, "distance_km": 0.0, "duration_sec": 0.0})
+        for r in period_runs:
+            act_id = r.get("id")
+            dist_km = r.get("distance_km") or 0.0
+            dur_sec = r.get("duration_sec") or 0.0
+            if act_id in st.session_state["gear_cache"]:
+                g_name = st.session_state["gear_cache"][act_id]
+                shoe_stats[g_name]["count"] += 1
+                shoe_stats[g_name]["distance_km"] += dist_km
+                shoe_stats[g_name]["duration_sec"] += dur_sec
+            else:
+                shoe_stats["（未読み込み）"]["count"] += 1
+                shoe_stats["（未読み込み）"]["distance_km"] += dist_km
+                shoe_stats["（未読み込み）"]["duration_sec"] += dur_sec
+
+        ranking_list = []
+        for shoe_name, info in shoe_stats.items():
+            total_km = info["distance_km"]
+            total_sec = info["duration_sec"]
+            if total_km > 0 and total_sec > 0:
+                avg_sec_per_km = total_sec / total_km
+                avg_pace_str = format_pace_from_sec(avg_sec_per_km)
+            else:
+                avg_pace_str = "-"
+            ranking_list.append(
+                {
+                    "shoe": shoe_name,
+                    "count": info["count"],
+                    "distance_km": total_km,
+                    "avg_pace": avg_pace_str,
+                }
+            )
+
+        if shoe_sort_by == "総走行距離順":
+            ranking_list.sort(key=lambda x: (-x["distance_km"], -x["count"]))
+        else:
+            ranking_list.sort(key=lambda x: (-x["count"], -x["distance_km"]))
+
+        total_period_km = sum(r.get("distance_km") or 0.0 for r in period_runs)
+        st.caption(f"{period_label} の合計：{len(period_runs)}回 / {total_period_km:.2f} km")
+
+        if ranking_list:
+            for idx, item in enumerate(ranking_list, start=1):
+                avg_dist = item["distance_km"] / item["count"] if item["count"] > 0 else 0.0
+                rank_html = f"""
+                <div class="shoe-rank-card">
+                  <div class="shoe-rank-left">
+                    <div class="rank-badge">{format_rank_label(idx)}</div>
+                    <div>
+                      <div class="shoe-rank-name">👟 {item["shoe"]}</div>
+                      <div class="shoe-rank-sub">1回あたり平均 {avg_dist:.1f} km</div>
+                      <div class="shoe-rank-pace">平均ペース：{item["avg_pace"]}</div>
+                    </div>
+                  </div>
+                  <div class="shoe-rank-right">
+                    <div class="shoe-rank-dist">{item["distance_km"]:.1f} km</div>
+                    <div class="shoe-rank-count">{item["count"]} 回使用</div>
+                  </div>
+                </div>
+                """
+                st.markdown(rank_html, unsafe_allow_html=True)
+        else:
+            st.caption("対象期間のランニングデータがありません。")
+
+    # --- 距離帯フィルター & 平均ペース順ソート ---
     st.markdown("### 🔎 距離帯フィルター & 平均ペース順ソート")
     col_filter, col_sort, col_limit = st.columns([2, 2, 1])
 
