@@ -331,6 +331,8 @@ if "gear_cache" not in st.session_state:
     st.session_state["gear_cache"] = {}
 if "auth_creds" not in st.session_state:
     st.session_state["auth_creds"] = {"email": "", "password": ""}
+if "active_view" not in st.session_state:
+    st.session_state["active_view"] = "distance"
 
 
 def calc_sec_per_km(avg_speed_mps):
@@ -467,15 +469,40 @@ def fetch_all_running_activities(email_val, password_val, status_placeholder=Non
     return run_items
 
 
-def extract_gear_name_from_list(gear_list):
+def _is_shoe_gear(gear_item):
+    """ギア項目がシューズ種別かどうかを判定する。"""
+    if not isinstance(gear_item, dict):
+        return False
+    g_type_obj = gear_item.get("gearType")
+    type_key = ""
+    if isinstance(g_type_obj, dict):
+        type_key = str(g_type_obj.get("gearTypeKey") or g_type_obj.get("typeKey") or "").lower()
+    elif g_type_obj is not None:
+        type_key = str(g_type_obj).lower()
+
+    type_name = str(gear_item.get("gearTypeName") or gear_item.get("typeName") or "").lower()
+    combined = f"{type_key} {type_name}"
+    return "shoe" in combined or "シューズ" in combined
+
+
+def parse_gear_info(gear_list):
+    """カード表示用のギア文字列と、シューズランキング用の純粋なシューズ名リストを返す。"""
     if not gear_list:
-        return "未登録"
-    names = [
-        g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
-        for g in gear_list
-        if g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
-    ]
-    return " / ".join(names) if names else "未登録"
+        return {"display_gear": "未登録", "shoes_only": []}
+
+    all_names = []
+    shoes_only = []
+
+    for g in gear_list:
+        name = g.get("displayName") or g.get("customMakeModel") or g.get("gearModelName")
+        if not name:
+            continue
+        all_names.append(name)
+        if _is_shoe_gear(g):
+            shoes_only.append(name)
+
+    display_gear = " / ".join(all_names) if all_names else "未登録"
+    return {"display_gear": display_gear, "shoes_only": shoes_only}
 
 
 def populate_gears_for_runs(email_val, password_val, target_runs, gear_cache, progress_placeholder=None):
@@ -492,9 +519,25 @@ def populate_gears_for_runs(email_val, password_val, target_runs, gear_cache, pr
             progress_placeholder.caption(f"シューズ情報を取得中...（{idx} / {total}件）")
         try:
             gear_list = client.get_activity_gear(act_id)
-            gear_cache[act_id] = extract_gear_name_from_list(gear_list)
+            gear_cache[act_id] = parse_gear_info(gear_list)
         except Exception:
-            gear_cache[act_id] = "未登録"
+            gear_cache[act_id] = {"display_gear": "未登録", "shoes_only": []}
+
+
+def get_cached_display_gear(gear_cache, act_id):
+    entry = gear_cache.get(act_id)
+    if isinstance(entry, dict):
+        return entry.get("display_gear", "未登録")
+    if isinstance(entry, str):
+        return entry
+    return "未登録"
+
+
+def get_cached_shoes_only(gear_cache, act_id):
+    entry = gear_cache.get(act_id)
+    if isinstance(entry, dict):
+        return entry.get("shoes_only", [])
+    return []
 
 
 def fetch_activity_splits(email_val, password_val, activity_id):
@@ -569,6 +612,7 @@ if fetch_clicked:
                 st.session_state["splits_cache"] = {}
                 st.session_state["gear_cache"] = {}
                 st.session_state["login_expanded"] = False
+                st.session_state["active_view"] = "distance"
                 status_box.empty()
                 st.rerun()
             except Exception as e:
@@ -578,8 +622,155 @@ if fetch_clicked:
 runs_data = st.session_state.get("runs_data", [])
 
 if runs_data:
-    # --- シューズ使用ランキング（年別・月別・全期間） ---
-    with st.expander("👟 シューズ使用ランキング（年別・月別）", expanded=True):
+    # --- ログイン後の表示切り替えボタン ---
+    nav_col1, nav_col2 = st.columns(2)
+    with nav_col1:
+        if st.button("📏 距離別ランデータ", use_container_width=True):
+            st.session_state["active_view"] = "distance"
+            st.rerun()
+    with nav_col2:
+        if st.button("👟 シューズランキング", use_container_width=True):
+            st.session_state["active_view"] = "shoes"
+            st.rerun()
+
+    st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
+
+    # --- 1) 距離別ランデータ ---
+    if st.session_state["active_view"] == "distance":
+        st.markdown("### 🔎 距離帯フィルター & 平均ペース順ソート")
+        col_filter, col_sort, col_limit = st.columns([2, 2, 1])
+
+        with col_filter:
+            selected_bucket = st.selectbox("走行距離帯（全履歴から選択）", DISTANCE_BUCKETS, index=0)
+
+        with col_sort:
+            sort_order = st.selectbox(
+                "並び順",
+                [
+                    "平均ペースが速い順",
+                    "平均ペースが遅い順",
+                    "日付が新しい順",
+                    "距離が長い順",
+                ],
+                index=0,
+            )
+
+        with col_limit:
+            max_display = st.selectbox("表示件数", [10, 20, 50, 100], index=0)
+
+        filtered_runs = [
+            r for r in runs_data if selected_bucket == "すべて" or r.get("distance_bucket") == selected_bucket
+        ]
+
+        if sort_order == "平均ペースが速い順":
+            filtered_runs = sorted(
+                filtered_runs,
+                key=lambda x: (x["pace_sec_per_km"] is None, x["pace_sec_per_km"] or 999999),
+            )
+        elif sort_order == "平均ペースが遅い順":
+            filtered_runs = sorted(
+                filtered_runs,
+                key=lambda x: (x["pace_sec_per_km"] is None, -(x["pace_sec_per_km"] or 0)),
+            )
+        elif sort_order == "日付が新しい順":
+            filtered_runs = sorted(filtered_runs, key=lambda x: x.get("date") or "", reverse=True)
+        elif sort_order == "距離が長い順":
+            filtered_runs = sorted(filtered_runs, key=lambda x: x.get("distance_km") or 0.0, reverse=True)
+
+        st.caption(f"全ラン {len(runs_data)}件 中 / 該当 {len(filtered_runs)}件（上位 {min(len(filtered_runs), max_display)}件を表示）")
+
+        display_runs = filtered_runs[:max_display]
+
+        if not display_runs:
+            st.markdown(
+                '<div class="guide-box">選択した走行距離帯に該当するランニングがありません。</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            creds = st.session_state.get("auth_creds", {})
+            if creds.get("email") and creds.get("password"):
+                missing_count = sum(
+                    1 for r in display_runs if r.get("id") and r.get("id") not in st.session_state["gear_cache"]
+                )
+                if missing_count > 0:
+                    with st.spinner(f"表示中 {len(display_runs)}件のシューズ情報を読み込み中..."):
+                        populate_gears_for_runs(
+                            creds["email"],
+                            creds["password"],
+                            display_runs,
+                            st.session_state["gear_cache"],
+                        )
+
+        for run in display_runs:
+            act_id = run.get("id")
+            gear_name = get_cached_display_gear(st.session_state["gear_cache"], act_id)
+            garmin_url = f"https://connect.garmin.com/modern/activity/{act_id}" if act_id else ""
+            link_html = (
+                f'<a class="garmin-link" href="{garmin_url}" target="_blank">🔗 Garmin Connectで開く</a>'
+                if garmin_url
+                else ""
+            )
+
+            card_html = f"""
+            <div class="run-card">
+              <div class="run-title">{run["name"]}</div>
+              <div class="run-date">📅 {run["date"]} ・ {run["distance_bucket"]}</div>
+              <div class="metric-grid">
+                <div class="metric-box">
+                  <div class="metric-label">距離</div>
+                  <div class="metric-value">{run["distance_km"]:.2f} km</div>
+                </div>
+                <div class="metric-box">
+                  <div class="metric-label">平均ペース</div>
+                  <div class="metric-value">{run["pace"]}</div>
+                </div>
+                <div class="metric-box">
+                  <div class="metric-label">タイム</div>
+                  <div class="metric-value">{run["duration"]}</div>
+                </div>
+                <div class="metric-box">
+                  <div class="metric-label">平均心拍</div>
+                  <div class="metric-value">{run["avg_hr"]} bpm</div>
+                </div>
+              </div>
+              <div class="card-footer">
+                <span class="gear-badge">👟 {gear_name}</span>
+                {link_html}
+              </div>
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)
+
+            with st.expander(f"📊 詳細データ・ラップ ({run['name']})"):
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("最大心拍", f"{run['max_hr']} bpm")
+                c2.metric("平均ピッチ", run["cadence"])
+                c3.metric("獲得標高", run["elevation_gain"])
+                c4.metric("消費カロリー", run["calories"])
+
+                if act_id:
+                    if act_id in st.session_state["splits_cache"]:
+                        laps_rows = st.session_state["splits_cache"][act_id]
+                        if laps_rows:
+                            st.dataframe(pd.DataFrame(laps_rows), use_container_width=True, hide_index=True)
+                        else:
+                            st.caption("ラップデータがありません。")
+                    else:
+                        if st.button("⏱ ラップタイムを読み込む", key=f"lap_btn_{act_id}", use_container_width=True):
+                            creds = st.session_state.get("auth_creds", {})
+                            with st.spinner("ラップを取得中..."):
+                                try:
+                                    rows = fetch_activity_splits(creds["email"], creds["password"], act_id)
+                                    st.session_state["splits_cache"][act_id] = rows
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"ラップ取得エラー: {e}")
+
+            st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+
+    # --- 2) シューズランキング ---
+    else:
+        st.markdown("### 👟 シューズ使用ランキング（年別・月別）")
         years = sorted({r["year"] for r in runs_data if r.get("year") and r["year"] != "不明"}, reverse=True)
         year_months = sorted(
             {r["year_month"] for r in runs_data if r.get("year_month") and r["year_month"] != "不明"},
@@ -643,15 +834,12 @@ if runs_data:
             act_id = r.get("id")
             dist_km = r.get("distance_km") or 0.0
             dur_sec = r.get("duration_sec") or 0.0
-            if act_id in st.session_state["gear_cache"]:
-                g_name = st.session_state["gear_cache"][act_id]
-                shoe_stats[g_name]["count"] += 1
-                shoe_stats[g_name]["distance_km"] += dist_km
-                shoe_stats[g_name]["duration_sec"] += dur_sec
-            else:
-                shoe_stats["（未読み込み）"]["count"] += 1
-                shoe_stats["（未読み込み）"]["distance_km"] += dist_km
-                shoe_stats["（未読み込み）"]["duration_sec"] += dur_sec
+            shoes_for_run = get_cached_shoes_only(st.session_state["gear_cache"], act_id)
+            # 「シューズ」種別のみ抽出（その他ギアや複合ギアの混在はシューズ単体のみ集計）
+            for shoe_name in shoes_for_run:
+                shoe_stats[shoe_name]["count"] += 1
+                shoe_stats[shoe_name]["distance_km"] += dist_km
+                shoe_stats[shoe_name]["duration_sec"] += dur_sec
 
         ranking_list = []
         for shoe_name, info in shoe_stats.items():
@@ -677,7 +865,7 @@ if runs_data:
             ranking_list.sort(key=lambda x: (-x["count"], -x["distance_km"]))
 
         total_period_km = sum(r.get("distance_km") or 0.0 for r in period_runs)
-        st.caption(f"{period_label} の合計：{len(period_runs)}回 / {total_period_km:.2f} km")
+        st.caption(f"{period_label} のラン合計：{len(period_runs)}回 / {total_period_km:.2f} km（シューズ種別のみ集計）")
 
         if ranking_list:
             for idx, item in enumerate(ranking_list, start=1):
@@ -700,139 +888,10 @@ if runs_data:
                 """
                 st.markdown(rank_html, unsafe_allow_html=True)
         else:
-            st.caption("対象期間のランニングデータがありません。")
-
-    # --- 距離帯フィルター & 平均ペース順ソート ---
-    st.markdown("### 🔎 距離帯フィルター & 平均ペース順ソート")
-    col_filter, col_sort, col_limit = st.columns([2, 2, 1])
-
-    with col_filter:
-        selected_bucket = st.selectbox("走行距離帯（全履歴から選択）", DISTANCE_BUCKETS, index=0)
-
-    with col_sort:
-        sort_order = st.selectbox(
-            "並び順",
-            [
-                "平均ペースが速い順",
-                "平均ペースが遅い順",
-                "日付が新しい順",
-                "距離が長い順",
-            ],
-            index=0,
-        )
-
-    with col_limit:
-        max_display = st.selectbox("表示件数", [10, 20, 50, 100], index=0)
-
-    filtered_runs = [
-        r for r in runs_data if selected_bucket == "すべて" or r.get("distance_bucket") == selected_bucket
-    ]
-
-    if sort_order == "平均ペースが速い順":
-        filtered_runs = sorted(
-            filtered_runs,
-            key=lambda x: (x["pace_sec_per_km"] is None, x["pace_sec_per_km"] or 999999),
-        )
-    elif sort_order == "平均ペースが遅い順":
-        filtered_runs = sorted(
-            filtered_runs,
-            key=lambda x: (x["pace_sec_per_km"] is None, -(x["pace_sec_per_km"] or 0)),
-        )
-    elif sort_order == "日付が新しい順":
-        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("date") or "", reverse=True)
-    elif sort_order == "距離が長い順":
-        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("distance_km") or 0.0, reverse=True)
-
-    st.caption(f"全ラン {len(runs_data)}件 中 / 該当 {len(filtered_runs)}件（上位 {min(len(filtered_runs), max_display)}件を表示）")
-
-    display_runs = filtered_runs[:max_display]
-
-    if not display_runs:
-        st.markdown(
-            '<div class="guide-box">選択した走行距離帯に該当するランニングがありません。</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        creds = st.session_state.get("auth_creds", {})
-        if creds.get("email") and creds.get("password"):
-            missing_count = sum(
-                1 for r in display_runs if r.get("id") and r.get("id") not in st.session_state["gear_cache"]
+            st.markdown(
+                '<div class="guide-box">対象期間にシューズ種別として登録されたギアのデータがありません。</div>',
+                unsafe_allow_html=True,
             )
-            if missing_count > 0:
-                with st.spinner(f"表示中 {len(display_runs)}件のシューズ情報を読み込み中..."):
-                    populate_gears_for_runs(
-                        creds["email"],
-                        creds["password"],
-                        display_runs,
-                        st.session_state["gear_cache"],
-                    )
-
-    for run in display_runs:
-        act_id = run.get("id")
-        gear_name = st.session_state["gear_cache"].get(act_id, "未登録")
-        garmin_url = f"https://connect.garmin.com/modern/activity/{act_id}" if act_id else ""
-        link_html = (
-            f'<a class="garmin-link" href="{garmin_url}" target="_blank">🔗 Garmin Connectで開く</a>'
-            if garmin_url
-            else ""
-        )
-
-        card_html = f"""
-        <div class="run-card">
-          <div class="run-title">{run["name"]}</div>
-          <div class="run-date">📅 {run["date"]} ・ {run["distance_bucket"]}</div>
-          <div class="metric-grid">
-            <div class="metric-box">
-              <div class="metric-label">距離</div>
-              <div class="metric-value">{run["distance_km"]:.2f} km</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-label">平均ペース</div>
-              <div class="metric-value">{run["pace"]}</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-label">タイム</div>
-              <div class="metric-value">{run["duration"]}</div>
-            </div>
-            <div class="metric-box">
-              <div class="metric-label">平均心拍</div>
-              <div class="metric-value">{run["avg_hr"]} bpm</div>
-            </div>
-          </div>
-          <div class="card-footer">
-            <span class="gear-badge">👟 {gear_name}</span>
-            {link_html}
-          </div>
-        </div>
-        """
-        st.markdown(card_html, unsafe_allow_html=True)
-
-        with st.expander(f"📊 詳細データ・ラップ ({run['name']})"):
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("最大心拍", f"{run['max_hr']} bpm")
-            c2.metric("平均ピッチ", run["cadence"])
-            c3.metric("獲得標高", run["elevation_gain"])
-            c4.metric("消費カロリー", run["calories"])
-
-            if act_id:
-                if act_id in st.session_state["splits_cache"]:
-                    laps_rows = st.session_state["splits_cache"][act_id]
-                    if laps_rows:
-                        st.dataframe(pd.DataFrame(laps_rows), use_container_width=True, hide_index=True)
-                    else:
-                        st.caption("ラップデータがありません。")
-                else:
-                    if st.button("⏱ ラップタイムを読み込む", key=f"lap_btn_{act_id}", use_container_width=True):
-                        creds = st.session_state.get("auth_creds", {})
-                        with st.spinner("ラップを取得中..."):
-                            try:
-                                rows = fetch_activity_splits(creds["email"], creds["password"], act_id)
-                                st.session_state["splits_cache"][act_id] = rows
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"ラップ取得エラー: {e}")
-
-        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 else:
     st.markdown(
         '<div class="guide-box">上の「🔐 Garminログイン・全アクティビティ取得」からログインして、データを取得してください。</div>',
