@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict
+from datetime import datetime
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
@@ -78,6 +79,122 @@ st.markdown(
         letter-spacing: -0.02em;
         color: #ffffff;
         line-height: 1.1;
+      }
+
+      /* 今月の走行距離サマリーバナー */
+      .monthly-summary-card {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        border: 1px solid #38bdf8;
+        border-radius: 16px;
+        padding: 16px 18px;
+        margin-top: 10px;
+        margin-bottom: 14px;
+        box-shadow: 0 8px 24px rgba(2, 132, 199, 0.18);
+      }
+      .monthly-summary-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 10px;
+      }
+      .monthly-summary-title {
+        font-size: 0.92rem;
+        font-weight: 700;
+        color: #7dd3fc;
+      }
+      .monthly-summary-sub {
+        font-size: 0.8rem;
+        color: #94a3b8;
+      }
+      .monthly-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .monthly-stat-box {
+        background-color: rgba(11, 17, 32, 0.65);
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 10px 12px;
+      }
+      .monthly-stat-label {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        margin-bottom: 2px;
+      }
+      .monthly-stat-value {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #38bdf8;
+      }
+
+      /* 比較カード */
+      .compare-header-card {
+        background: linear-gradient(145deg, #111827, #0f172a);
+        border: 1px solid #334155;
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        height: 100%;
+      }
+      .compare-tag {
+        display: inline-block;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .compare-tag-a {
+        background-color: #0c4a6e;
+        border: 1px solid #38bdf8;
+        color: #e0f2fe;
+      }
+      .compare-tag-b {
+        background-color: #064e3b;
+        border: 1px solid #34d399;
+        color: #ecfdf5;
+      }
+      .compare-row {
+        background-color: #111827;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
+      }
+      .compare-row-label {
+        font-size: 0.78rem;
+        color: #94a3b8;
+        margin-bottom: 4px;
+        text-align: center;
+      }
+      .compare-row-values {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 8px;
+      }
+      .compare-val-a {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #7dd3fc;
+        text-align: left;
+      }
+      .compare-val-b {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #6ee7b7;
+        text-align: right;
+      }
+      .compare-diff-badge {
+        font-size: 0.76rem;
+        font-weight: 600;
+        color: #cbd5e1;
+        background-color: #1e293b;
+        border: 1px solid #475569;
+        border-radius: 999px;
+        padding: 2px 9px;
+        white-space: nowrap;
       }
 
       /* 自前ダーク案内ボックス */
@@ -337,6 +454,12 @@ st.markdown(
         .app-title-text {
           font-size: 1.5rem;
         }
+        .monthly-summary-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .monthly-stat-value {
+          font-size: 1.05rem;
+        }
         .run-card {
           padding: 14px !important;
           border-radius: 14px !important;
@@ -433,6 +556,15 @@ DISTANCE_BUCKETS = [
 ]
 
 
+def matches_keyword(run_item, keyword_query):
+    query = (keyword_query or "").strip().lower()
+    if not query:
+        return True
+    tokens = query.split()
+    searchable = f"{run_item.get('name', '')} {run_item.get('date', '')}".lower()
+    return all(tok in searchable for tok in tokens)
+
+
 def create_client(email_val, password_val):
     client = Garmin(email_val, password_val)
     client.login()
@@ -474,6 +606,10 @@ def fetch_all_running_activities(email_val, password_val, status_placeholder=Non
             if raw_ascent is None:
                 raw_ascent = act.get("totalAscent")
             elevation_gain = f"{int(round(raw_ascent))} m" if raw_ascent is not None else "-"
+            elevation_num = float(raw_ascent) if raw_ascent is not None else None
+
+            avg_hr_val = act.get("averageHR")
+            max_hr_val = act.get("maxHR")
 
             run_items.append(
                 {
@@ -488,11 +624,15 @@ def fetch_all_running_activities(email_val, password_val, status_placeholder=Non
                     "pace": format_pace_from_sec(pace_sec_per_km),
                     "pace_sec_per_km": pace_sec_per_km,
                     "duration": format_duration(duration_sec),
-                    "avg_hr": act.get("averageHR") or "-",
-                    "max_hr": act.get("maxHR") or "-",
+                    "avg_hr": avg_hr_val if avg_hr_val is not None else "-",
+                    "avg_hr_num": float(avg_hr_val) if avg_hr_val is not None else None,
+                    "max_hr": max_hr_val if max_hr_val is not None else "-",
+                    "max_hr_num": float(max_hr_val) if max_hr_val is not None else None,
                     "cadence": f"{int(round(cadence))} spm" if cadence is not None else "-",
+                    "cadence_num": float(cadence) if cadence is not None else None,
                     "calories": f"{int(act.get('calories'))} kcal" if act.get("calories") is not None else "-",
                     "elevation_gain": elevation_gain,
+                    "elevation_num": elevation_num,
                 }
             )
 
@@ -601,6 +741,65 @@ def format_rank_label(rank_idx):
     return f"{rank_idx}位"
 
 
+def render_monthly_summary(runs_list):
+    current_ym = datetime.now().strftime("%Y-%m")
+    this_month_runs = [r for r in runs_list if r.get("year_month") == current_ym]
+    total_km = sum(r.get("distance_km") or 0.0 for r in this_month_runs)
+    total_sec = sum(r.get("duration_sec") or 0.0 for r in this_month_runs)
+    run_count = len(this_month_runs)
+
+    if total_km > 0 and total_sec > 0:
+        avg_pace_str = format_pace_from_sec(total_sec / total_km)
+    else:
+        avg_pace_str = "-"
+
+    total_time_str = format_duration(total_sec) if total_sec > 0 else "0:00"
+
+    summary_html = f"""
+    <div class="monthly-summary-card">
+      <div class="monthly-summary-header">
+        <span class="monthly-summary-title">📅 今月の走行サマリー（{current_ym}）</span>
+        <span class="monthly-summary-sub">全履歴 {len(runs_list)}件 取得済み</span>
+      </div>
+      <div class="monthly-summary-grid">
+        <div class="monthly-stat-box">
+          <div class="monthly-stat-label">今月の走行距離</div>
+          <div class="monthly-stat-value">{total_km:.1f} km</div>
+        </div>
+        <div class="monthly-stat-box">
+          <div class="monthly-stat-label">ラン回数</div>
+          <div class="monthly-stat-value">{run_count} 回</div>
+        </div>
+        <div class="monthly-stat-box">
+          <div class="monthly-stat-label">平均ペース</div>
+          <div class="monthly-stat-value">{avg_pace_str}</div>
+        </div>
+        <div class="monthly-stat-box">
+          <div class="monthly-stat-label">累計タイム</div>
+          <div class="monthly-stat-value">{total_time_str}</div>
+        </div>
+      </div>
+    </div>
+    """
+    st.markdown(summary_html, unsafe_allow_html=True)
+
+
+def render_compare_row(label, val_a, val_b, diff_text="—"):
+    st.markdown(
+        f"""
+        <div class="compare-row">
+          <div class="compare-row-label">{label}</div>
+          <div class="compare-row-values">
+            <div class="compare-val-a">{val_a}</div>
+            <div class="compare-diff-badge">{diff_text}</div>
+            <div class="compare-val-b">{val_b}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 st.markdown(
     """
     <div class="app-header">
@@ -646,7 +845,7 @@ if fetch_clicked:
                 st.session_state["active_view"] = None
                 if runs:
                     st.session_state["login_expanded"] = False
-                    st.session_state["last_fetch_message"] = f"取得完了：{len(runs)}件のランニングデータを読み込みました。"
+                    st.session_state["last_fetch_message"] = ""
                 else:
                     st.session_state["login_expanded"] = True
                     st.session_state["last_fetch_message"] = "ログインはできましたが、ランニング種別のアクティビティが0件でした。"
@@ -662,14 +861,21 @@ if st.session_state.get("last_fetch_message"):
 runs_data = st.session_state.get("runs_data", [])
 
 if runs_data:
-    nav_col1, nav_col2 = st.columns(2)
+    # ログイン後、上部に今月の走行距離サマリーを表示
+    render_monthly_summary(runs_data)
+
+    nav_col1, nav_col2, nav_col3 = st.columns(3)
     with nav_col1:
-        if st.button("📏 距離別ランデータ", use_container_width=True):
+        if st.button("📏 距離別ラン", use_container_width=True):
             st.session_state["active_view"] = "distance"
             st.rerun()
     with nav_col2:
-        if st.button("👟 シューズランキング", use_container_width=True):
+        if st.button("👟 シューズ順位", use_container_width=True):
             st.session_state["active_view"] = "shoes"
+            st.rerun()
+    with nav_col3:
+        if st.button("⚖️ ラン比較", use_container_width=True):
+            st.session_state["active_view"] = "compare"
             st.rerun()
 
     st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
@@ -677,13 +883,20 @@ if runs_data:
     # --- 未選択時：ボタンを押すまで表示しない ---
     if st.session_state["active_view"] is None:
         st.markdown(
-            '<div class="guide-box">上の「📏 距離別ランデータ」または「👟 シューズランキング」ボタンを押すと表示されます。</div>',
+            '<div class="guide-box">上の「📏 距離別ラン」「👟 シューズ順位」「⚖️ ラン比較」ボタンから見たいメニューを選んでください。</div>',
             unsafe_allow_html=True,
         )
 
-    # --- 1) 距離別ランデータ ---
+    # --- 1) 距離別ランデータ（フリーワード検索対応） ---
     elif st.session_state["active_view"] == "distance":
-        st.markdown("### 距離別ランデータ")
+        st.markdown("### 📏 距離別ランデータ")
+
+        keyword_filter = st.text_input(
+            "🔍 アクティビティ名・日付で検索（フリーワード）",
+            value="",
+            placeholder="例：マラソン / 30km / インターバル / 2026-02",
+        )
+
         col_filter, col_sort, col_limit = st.columns([2, 2, 1])
 
         with col_filter:
@@ -705,7 +918,10 @@ if runs_data:
             max_display = st.selectbox("表示件数", [10, 20, 50, 100], index=0)
 
         filtered_runs = [
-            r for r in runs_data if selected_bucket == "すべて" or r.get("distance_bucket") == selected_bucket
+            r
+            for r in runs_data
+            if (selected_bucket == "すべて" or r.get("distance_bucket") == selected_bucket)
+            and matches_keyword(r, keyword_filter)
         ]
 
         if sort_order == "平均ペースが速い順":
@@ -729,7 +945,7 @@ if runs_data:
 
         if not display_runs:
             st.markdown(
-                '<div class="guide-box">選択した走行距離帯に該当するランニングがありません。</div>',
+                '<div class="guide-box">条件に一致するランニングが見つかりませんでした。検索ワードや距離帯を変えてみてください。</div>',
                 unsafe_allow_html=True,
             )
         else:
@@ -815,7 +1031,7 @@ if runs_data:
             st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 
     # --- 2) シューズランキング ---
-    else:
+    elif st.session_state["active_view"] == "shoes":
         st.markdown("### 👟 シューズ使用ランキング（年別・月別）")
         years = sorted({r["year"] for r in runs_data if r.get("year") and r["year"] != "不明"}, reverse=True)
         year_months = sorted(
@@ -971,6 +1187,214 @@ if runs_data:
                 '<div class="guide-box">対象期間にシューズ種別として登録されたギアのデータがありません。</div>',
                 unsafe_allow_html=True,
             )
+
+    # --- 3) ランアクティビティ比較 ---
+    else:
+        st.markdown("### ⚖️ ランアクティビティ比較")
+
+        cmp_search = st.text_input(
+            "🔍 比較候補をアクティビティ名・日付で絞り込み",
+            value="",
+            placeholder="例：マラソン / 30km / 2026",
+            key="compare_keyword_input",
+        )
+
+        sorted_for_cmp = sorted(
+            [r for r in runs_data if matches_keyword(r, cmp_search)],
+            key=lambda x: x.get("date") or "",
+            reverse=True,
+        )
+
+        if len(sorted_for_cmp) < 2:
+            st.markdown(
+                '<div class="guide-box">比較できるアクティビティが2件以上ありません。検索条件を広げてみてください。</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            option_indices = list(range(len(sorted_for_cmp)))
+
+            def format_cmp_option(i):
+                item = sorted_for_cmp[i]
+                date_short = (item.get("date") or "-")[:10]
+                return f"{date_short} | {item['name']}（{item['distance_km']:.2f}km / {item['pace']}）"
+
+            sel_col1, sel_col2 = st.columns(2)
+            with sel_col1:
+                idx_a = st.selectbox(
+                    "🟦 ラン A（基準）",
+                    option_indices,
+                    index=0,
+                    format_func=format_cmp_option,
+                    key="cmp_select_a",
+                )
+            with sel_col2:
+                default_b = 1 if len(option_indices) > 1 else 0
+                idx_b = st.selectbox(
+                    "🟩 ラン B（比較対象）",
+                    option_indices,
+                    index=default_b,
+                    format_func=format_cmp_option,
+                    key="cmp_select_b",
+                )
+
+            run_a = sorted_for_cmp[idx_a]
+            run_b = sorted_for_cmp[idx_b]
+
+            creds = st.session_state.get("auth_creds", {})
+            pair_runs = [run_a, run_b]
+            missing_pair = [
+                r for r in pair_runs if r.get("id") and r.get("id") not in st.session_state["gear_cache"]
+            ]
+            if missing_pair and creds.get("email") and creds.get("password"):
+                with st.spinner("選択した2件のシューズ情報を読み込み中..."):
+                    populate_gears_for_runs(
+                        creds["email"],
+                        creds["password"],
+                        pair_runs,
+                        st.session_state["gear_cache"],
+                    )
+
+            gear_a = get_cached_display_gear(st.session_state["gear_cache"], run_a.get("id"))
+            gear_b = get_cached_display_gear(st.session_state["gear_cache"], run_b.get("id"))
+
+            url_a = f"https://connect.garmin.com/modern/activity/{run_a.get('id')}" if run_a.get("id") else ""
+            url_b = f"https://connect.garmin.com/modern/activity/{run_b.get('id')}" if run_b.get("id") else ""
+            link_a = f'<a class="garmin-link" href="{url_a}" target="_blank">🔗 Garmin Connectで開く</a>' if url_a else ""
+            link_b = f'<a class="garmin-link" href="{url_b}" target="_blank">🔗 Garmin Connectで開く</a>' if url_b else ""
+
+            h_col1, h_col2 = st.columns(2)
+            with h_col1:
+                st.markdown(
+                    f"""
+                    <div class="compare-header-card">
+                      <span class="compare-tag compare-tag-a">ラン A</span>
+                      <div class="run-title">{run_a["name"]}</div>
+                      <div class="run-date">📅 {run_a["date"]}</div>
+                      <div style="margin-top:8px;">{link_a}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            with h_col2:
+                st.markdown(
+                    f"""
+                    <div class="compare-header-card">
+                      <span class="compare-tag compare-tag-b">ラン B</span>
+                      <div class="run-title">{run_b["name"]}</div>
+                      <div class="run-date">📅 {run_b["date"]}</div>
+                      <div style="margin-top:8px;">{link_b}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # 差分計算（A - B）
+            dist_diff = (run_a.get("distance_km") or 0.0) - (run_b.get("distance_km") or 0.0)
+            dist_diff_str = f"A基準 {dist_diff:+.2f} km"
+
+            pace_a_sec = run_a.get("pace_sec_per_km")
+            pace_b_sec = run_b.get("pace_sec_per_km")
+            if pace_a_sec is not None and pace_b_sec is not None:
+                p_diff = int(round(pace_a_sec - pace_b_sec))
+                if p_diff == 0:
+                    pace_diff_str = "同ペース"
+                elif p_diff < 0:
+                    pace_diff_str = f"Aが {abs(p_diff)}秒/km 速い"
+                else:
+                    pace_diff_str = f"Aが {p_diff}秒/km 遅い"
+            else:
+                pace_diff_str = "—"
+
+            dur_a = run_a.get("duration_sec") or 0.0
+            dur_b = run_b.get("duration_sec") or 0.0
+            dur_diff = int(round(dur_a - dur_b))
+            if dur_diff == 0:
+                dur_diff_str = "同タイム"
+            else:
+                sign = "+" if dur_diff > 0 else "-"
+                dur_diff_str = f"A基準 {sign}{format_duration(abs(dur_diff))}"
+
+            hr_a = run_a.get("avg_hr_num")
+            hr_b = run_b.get("avg_hr_num")
+            if hr_a is not None and hr_b is not None:
+                hr_diff_str = f"A基準 {int(round(hr_a - hr_b)):+d} bpm"
+            else:
+                hr_diff_str = "—"
+
+            max_hr_a = run_a.get("max_hr_num")
+            max_hr_b = run_b.get("max_hr_num")
+            if max_hr_a is not None and max_hr_b is not None:
+                max_hr_diff_str = f"A基準 {int(round(max_hr_a - max_hr_b)):+d} bpm"
+            else:
+                max_hr_diff_str = "—"
+
+            cad_a = run_a.get("cadence_num")
+            cad_b = run_b.get("cadence_num")
+            if cad_a is not None and cad_b is not None:
+                cad_diff_str = f"A基準 {int(round(cad_a - cad_b)):+d} spm"
+            else:
+                cad_diff_str = "—"
+
+            ele_a = run_a.get("elevation_num")
+            ele_b = run_b.get("elevation_num")
+            if ele_a is not None and ele_b is not None:
+                ele_diff_str = f"A基準 {int(round(ele_a - ele_b)):+d} m"
+            else:
+                ele_diff_str = "—"
+
+            render_compare_row("走行距離", f"{run_a['distance_km']:.2f} km", f"{run_b['distance_km']:.2f} km", dist_diff_str)
+            render_compare_row("平均ペース", run_a["pace"], run_b["pace"], pace_diff_str)
+            render_compare_row("タイム", run_a["duration"], run_b["duration"], dur_diff_str)
+            render_compare_row("平均心拍", f"{run_a['avg_hr']} bpm", f"{run_b['avg_hr']} bpm", hr_diff_str)
+            render_compare_row("最大心拍", f"{run_a['max_hr']} bpm", f"{run_b['max_hr']} bpm", max_hr_diff_str)
+            render_compare_row("平均ピッチ", run_a["cadence"], run_b["cadence"], cad_diff_str)
+            render_compare_row("獲得標高", run_a["elevation_gain"], run_b["elevation_gain"], ele_diff_str)
+            render_compare_row("使用シューズ", gear_a, gear_b, "ギア比較")
+
+            # ラップタイム比較
+            with st.expander("⏱ ラン A と ラン B のラップタイムを並べて比較する"):
+                id_a = run_a.get("id")
+                id_b = run_b.get("id")
+                need_fetch_a = id_a and id_a not in st.session_state["splits_cache"]
+                need_fetch_b = id_b and id_b not in st.session_state["splits_cache"]
+
+                if (need_fetch_a or need_fetch_b) and creds.get("email") and creds.get("password"):
+                    if st.button("⏱ 両方のラップタイムを読み込む", key="cmp_load_laps_btn", use_container_width=True):
+                        with st.spinner("2件分のラップデータを取得中..."):
+                            try:
+                                if need_fetch_a:
+                                    st.session_state["splits_cache"][id_a] = fetch_activity_splits(
+                                        creds["email"], creds["password"], id_a
+                                    )
+                                if need_fetch_b:
+                                    st.session_state["splits_cache"][id_b] = fetch_activity_splits(
+                                        creds["email"], creds["password"], id_b
+                                    )
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"ラップ取得エラー: {e}")
+
+                lap_col1, lap_col2 = st.columns(2)
+                with lap_col1:
+                    st.caption(f"🟦 ラン A：{run_a['name']}")
+                    if id_a in st.session_state["splits_cache"]:
+                        rows_a = st.session_state["splits_cache"][id_a]
+                        if rows_a:
+                            st.dataframe(pd.DataFrame(rows_a), use_container_width=True, hide_index=True)
+                        else:
+                            st.caption("ラップデータがありません。")
+                    else:
+                        st.caption("未読み込み")
+                with lap_col2:
+                    st.caption(f"🟩 ラン B：{run_b['name']}")
+                    if id_b in st.session_state["splits_cache"]:
+                        rows_b = st.session_state["splits_cache"][id_b]
+                        if rows_b:
+                            st.dataframe(pd.DataFrame(rows_b), use_container_width=True, hide_index=True)
+                        else:
+                            st.caption("ラップデータがありません。")
+                    else:
+                        st.caption("未読み込み")
 else:
     st.markdown(
         '<div class="guide-box">上の「🔐 Garminログイン・全アクティビティ取得」からログインして、データを取得してください。</div>',
