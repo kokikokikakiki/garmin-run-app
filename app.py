@@ -731,6 +731,28 @@ def fetch_activity_splits(email_val, password_val, activity_id):
     return rows
 
 
+def build_side_by_side_laps_df(rows_a, rows_b):
+    max_laps = max(len(rows_a or []), len(rows_b or []))
+    combined = []
+    for i in range(max_laps):
+        a = rows_a[i] if rows_a and i < len(rows_a) else None
+        b = rows_b[i] if rows_b and i < len(rows_b) else None
+        combined.append(
+            {
+                "ラップ": i + 1,
+                "A 距離": f"{a['距離 (km)']:.2f}" if a else "-",
+                "A タイム": a["タイム"] if a else "-",
+                "A ペース": a["ペース"] if a else "-",
+                "A 心拍": a["平均心拍"] if a else "-",
+                "B 距離": f"{b['距離 (km)']:.2f}" if b else "-",
+                "B タイム": b["タイム"] if b else "-",
+                "B ペース": b["ペース"] if b else "-",
+                "B 心拍": b["平均心拍"] if b else "-",
+            }
+        )
+    return pd.DataFrame(combined)
+
+
 def format_rank_label(rank_idx):
     if rank_idx == 1:
         return "🥇 1位"
@@ -1192,22 +1214,38 @@ if runs_data:
     else:
         st.markdown("### ⚖️ ランアクティビティ比較")
 
-        cmp_search = st.text_input(
-            "🔍 比較候補をアクティビティ名・日付で絞り込み",
-            value="",
-            placeholder="例：マラソン / 30km / 2026",
-            key="compare_keyword_input",
-        )
+        f_col1, f_col2 = st.columns([1.4, 1.6])
+        with f_col1:
+            cmp_bucket = st.selectbox(
+                "📏 走行距離帯で絞り込み",
+                DISTANCE_BUCKETS,
+                index=0,
+                key="compare_bucket_select",
+            )
+        with f_col2:
+            cmp_search = st.text_input(
+                "🔍 アクティビティ名・日付で検索",
+                value="",
+                placeholder="例：マラソン / 30km / 2026",
+                key="compare_keyword_input",
+            )
 
         sorted_for_cmp = sorted(
-            [r for r in runs_data if matches_keyword(r, cmp_search)],
+            [
+                r
+                for r in runs_data
+                if (cmp_bucket == "すべて" or r.get("distance_bucket") == cmp_bucket)
+                and matches_keyword(r, cmp_search)
+            ],
             key=lambda x: x.get("date") or "",
             reverse=True,
         )
 
+        st.caption(f"絞り込み結果：{len(sorted_for_cmp)}件（全 {len(runs_data)}件中）")
+
         if len(sorted_for_cmp) < 2:
             st.markdown(
-                '<div class="guide-box">比較できるアクティビティが2件以上ありません。検索条件を広げてみてください。</div>',
+                '<div class="guide-box">比較できるアクティビティが2件以上ありません。走行距離帯や検索条件を広げてみてください。</div>',
                 unsafe_allow_html=True,
             )
         else:
@@ -1269,7 +1307,7 @@ if runs_data:
                     <div class="compare-header-card">
                       <span class="compare-tag compare-tag-a">ラン A</span>
                       <div class="run-title">{run_a["name"]}</div>
-                      <div class="run-date">📅 {run_a["date"]}</div>
+                      <div class="run-date">📅 {run_a["date"]} ・ {run_a["distance_bucket"]}</div>
                       <div style="margin-top:8px;">{link_a}</div>
                     </div>
                     """,
@@ -1281,7 +1319,7 @@ if runs_data:
                     <div class="compare-header-card">
                       <span class="compare-tag compare-tag-b">ラン B</span>
                       <div class="run-title">{run_b["name"]}</div>
-                      <div class="run-date">📅 {run_b["date"]}</div>
+                      <div class="run-date">📅 {run_b["date"]} ・ {run_b["distance_bucket"]}</div>
                       <div style="margin-top:8px;">{link_b}</div>
                     </div>
                     """,
@@ -1351,8 +1389,8 @@ if runs_data:
             render_compare_row("獲得標高", run_a["elevation_gain"], run_b["elevation_gain"], ele_diff_str)
             render_compare_row("使用シューズ", gear_a, gear_b, "ギア比較")
 
-            # ラップタイム比較
-            with st.expander("⏱ ラン A と ラン B のラップタイムを並べて比較する"):
+            # ラップタイム横並び比較
+            with st.expander("⏱ ラン A と ラン B のラップタイムを横並び比較する"):
                 id_a = run_a.get("id")
                 id_b = run_b.get("id")
                 need_fetch_a = id_a and id_a not in st.session_state["splits_cache"]
@@ -1374,27 +1412,18 @@ if runs_data:
                             except Exception as e:
                                 st.error(f"ラップ取得エラー: {e}")
 
-                lap_col1, lap_col2 = st.columns(2)
-                with lap_col1:
-                    st.caption(f"🟦 ラン A：{run_a['name']}")
-                    if id_a in st.session_state["splits_cache"]:
-                        rows_a = st.session_state["splits_cache"][id_a]
-                        if rows_a:
-                            st.dataframe(pd.DataFrame(rows_a), use_container_width=True, hide_index=True)
-                        else:
-                            st.caption("ラップデータがありません。")
+                rows_a = st.session_state["splits_cache"].get(id_a)
+                rows_b = st.session_state["splits_cache"].get(id_b)
+
+                if rows_a is not None or rows_b is not None:
+                    st.caption(f"🟦 A：{run_a['name']}（{(run_a.get('date') or '-')[:10]}） ／ 🟩 B：{run_b['name']}（{(run_b.get('date') or '-')[:10]}）")
+                    side_df = build_side_by_side_laps_df(rows_a, rows_b)
+                    if not side_df.empty:
+                        st.dataframe(side_df, use_container_width=True, hide_index=True)
                     else:
-                        st.caption("未読み込み")
-                with lap_col2:
-                    st.caption(f"🟩 ラン B：{run_b['name']}")
-                    if id_b in st.session_state["splits_cache"]:
-                        rows_b = st.session_state["splits_cache"][id_b]
-                        if rows_b:
-                            st.dataframe(pd.DataFrame(rows_b), use_container_width=True, hide_index=True)
-                        else:
-                            st.caption("ラップデータがありません。")
-                    else:
-                        st.caption("未読み込み")
+                        st.caption("ラップデータがありません。")
+                else:
+                    st.caption("上のボタンを押すと、AとBのラップを1つの表に横並びで表示します。")
 else:
     st.markdown(
         '<div class="guide-box">上の「🔐 Garminログイン・全アクティビティ取得」からログインして、データを取得してください。</div>',
