@@ -92,8 +92,10 @@ st.markdown(
         margin-top: 8px;
       }
 
-      /* 案内ボックス（st.info）の視認性向上 */
-      [data-testid="stAlert"] {
+      /* アラート（st.error / st.warning / st.info）の視認性向上 */
+      [data-testid="stAlert"],
+      [data-testid="stAlert"] > div,
+      [data-testid="stNotification"] {
         background-color: #1e293b !important;
         color: #f8fafc !important;
         border: 1px solid #38bdf8 !important;
@@ -101,8 +103,12 @@ st.markdown(
       }
       [data-testid="stAlert"] p,
       [data-testid="stAlert"] div,
-      [data-testid="stAlert"] span {
+      [data-testid="stAlert"] span,
+      [data-testid="stNotification"] p,
+      [data-testid="stNotification"] div,
+      [data-testid="stNotification"] span {
         color: #f8fafc !important;
+        background-color: transparent !important;
       }
 
       /* 入力欄・セレクト・ボタンの視認性向上 */
@@ -359,6 +365,8 @@ if "auth_creds" not in st.session_state:
     st.session_state["auth_creds"] = {"email": "", "password": ""}
 if "active_view" not in st.session_state:
     st.session_state["active_view"] = None
+if "last_fetch_message" not in st.session_state:
+    st.session_state["last_fetch_message"] = ""
 
 
 def calc_sec_per_km(avg_speed_mps):
@@ -623,25 +631,33 @@ with st.expander("🔐 Garminログイン・全アクティビティ取得", exp
     fetch_clicked = st.button("🔄 全ランデータを取得", use_container_width=True)
 
 if fetch_clicked:
-    if not email or not password:
+    clean_email = email.strip()
+    if not clean_email or not password:
         st.warning("メールアドレスとパスワードの両方を入力してください。")
     else:
         status_box = st.empty()
         with st.spinner("Garmin Connect から全ランニング履歴を取得中..."):
             try:
-                clean_email = email.strip()
                 runs = fetch_all_running_activities(clean_email, password, status_box)
                 st.session_state["runs_data"] = runs
                 st.session_state["auth_creds"] = {"email": clean_email, "password": password}
                 st.session_state["splits_cache"] = {}
                 st.session_state["gear_cache"] = {}
-                st.session_state["login_expanded"] = False
                 st.session_state["active_view"] = None
+                if runs:
+                    st.session_state["login_expanded"] = False
+                    st.session_state["last_fetch_message"] = f"取得完了：{len(runs)}件のランニングデータを読み込みました。"
+                else:
+                    st.session_state["login_expanded"] = True
+                    st.session_state["last_fetch_message"] = "ログインはできましたが、ランニング種別のアクティビティが0件でした。"
                 status_box.empty()
                 st.rerun()
             except Exception as e:
                 status_box.empty()
                 st.error(f"データ取得に失敗しました: {e}")
+
+if st.session_state.get("last_fetch_message"):
+    st.info(st.session_state["last_fetch_message"])
 
 runs_data = st.session_state.get("runs_data", [])
 
