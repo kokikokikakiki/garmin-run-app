@@ -741,12 +741,12 @@ def build_side_by_side_laps_df(rows_a, rows_b):
             {
                 "ラップ": i + 1,
                 "A 距離": f"{a['距離 (km)']:.2f}" if a else "-",
-                "A タイム": a["タイム"] if a else "-",
-                "A ペース": a["ペース"] if a else "-",
-                "A 心拍": a["平均心拍"] if a else "-",
                 "B 距離": f"{b['距離 (km)']:.2f}" if b else "-",
+                "A タイム": a["タイム"] if a else "-",
                 "B タイム": b["タイム"] if b else "-",
+                "A ペース": a["ペース"] if a else "-",
                 "B ペース": b["ペース"] if b else "-",
+                "A 心拍": a["平均心拍"] if a else "-",
                 "B 心拍": b["平均心拍"] if b else "-",
             }
         )
@@ -1389,8 +1389,8 @@ if runs_data:
             render_compare_row("獲得標高", run_a["elevation_gain"], run_b["elevation_gain"], ele_diff_str)
             render_compare_row("使用シューズ", gear_a, gear_b, "ギア比較")
 
-            # ラップタイム横並び比較
-            with st.expander("⏱ ラン A と ラン B のラップタイムを横並び比較する"):
+            # ラップタイム項目別比較
+            with st.expander("⏱ ラン A と ラン B のラップタイムを項目ごとに比較する"):
                 id_a = run_a.get("id")
                 id_b = run_b.get("id")
                 need_fetch_a = id_a and id_a not in st.session_state["splits_cache"]
@@ -1423,7 +1423,7 @@ if runs_data:
                     else:
                         st.caption("ラップデータがありません。")
                 else:
-                    st.caption("上のボタンを押すと、AとBのラップを1つの表に横並びで表示します。")
+                    st.caption("上のボタンを押すと、AとBのラップを項目ごとに並べて表示します。")
 else:
     st.markdown(
         '<div class="guide-box">上の「🔐 Garminログイン・全アクティビティ取得」からログインして、データを取得してください。</div>',
