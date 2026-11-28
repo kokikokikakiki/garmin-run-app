@@ -936,7 +936,7 @@ if runs_data:
                         a_id = act.get("id")
                         g_url = f"https://connect.garmin.com/modern/activity/{a_id}" if a_id else ""
                         g_btn = (
-                            f'<a class="garmin-link" href="{g_url}" target="_blank">🔗 Garmin Connect</a>'
+                            f'<a class="garmin-link" href="{g_url}" target="_blank">🔗 Garmin Connectで開く</a>'
                             if g_url
                             else ""
                         )
