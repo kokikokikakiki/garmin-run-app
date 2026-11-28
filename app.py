@@ -17,11 +17,13 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      /* 上部のGitHubアイコン・ツールバー・右下のStreamlitバッジをすべて非表示 */
+      /* 上部のGitHubアイコン・ツールバー・右下のManage app/Streamlitバッジをすべて非表示 */
       [data-testid="stToolbar"],
       [data-testid="stHeaderActionElements"],
       [data-testid="stDecoration"],
       [data-testid="stStatusWidget"],
+      [data-testid="manage-app-button"],
+      button[kind="manageApp"],
       #MainMenu,
       footer,
       .stAppDeployButton,
